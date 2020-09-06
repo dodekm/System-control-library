@@ -1,8 +1,7 @@
 #include "continuous_systems.h"
-#include "wrappers.h"
 
 using namespace SystemControl;
-using namespace Convert;
+
 
 ContinuousSystemInterface::ContinuousSystemInterface(size_t order, real_t* dX_data_ptr, real_t* X_data_ptr) :
 		X(order, X_data_ptr), dX(order, dX_data_ptr) {
@@ -47,8 +46,8 @@ void ContinuousStateSpace::update_derivatives_fcn(real_t time, step_type step_ty
 	gsl_blas_dgemv(CblasNoTrans, 1.0, &A_gsl, &X_gsl, 0.0, &dX_gsl);
 	gsl_blas_daxpy(u, &B_gsl, &dX_gsl);
 #else
-	VectorReal2colMatrix(dX).multiply(A,VectorReal2colMatrix(X));
-	VectorReal2colMatrix(dX).multiply_by_scalar_and_accumulate(VectorReal2colMatrix(B),u);
+	A.multiply(X,dX);
+	dX.multiply_by_scalar_and_accumulate(B,u);
 #endif
 
 }

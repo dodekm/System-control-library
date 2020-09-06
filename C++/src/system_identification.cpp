@@ -1,34 +1,33 @@
 #include "system_identification.h"
-#include "wrappers.h"
 
 using namespace SystemControl;
-using namespace Convert;
 
-#ifdef USE_GSL
-real_t SystemIdentification::linear_regression(const Matrix& X_mat, const VectorReal& y_vector, VectorReal& params_vector) {
+real_t SystemIdentification::linear_regression(const Matrix& H, const VectorReal& y_vector, VectorReal& theta) {
 
 	y_vector.assert();
-	params_vector.assert();
-	X_mat.assert();
+	theta.assert();
+	H.assert();
 
 #ifdef ASSERT_DIMENSIONS
-	if (y_vector.get_length() != X_mat.get_n_rows())
+	if (y_vector.get_length() != H.get_n_rows())
 		throw exception_WRONG_DIMENSIONS;
-	if (params_vector.get_length() != X_mat.get_n_cols())
+	if (theta.get_length() != H.get_n_cols())
 		throw exception_WRONG_DIMENSIONS;
 #endif
 
-	size_t n_params = params_vector.get_length();
+	size_t n_params = theta.get_length();
 	size_t n_observ = y_vector.get_length();
 
-	gsl_vector c = params_vector.to_gsl_vector();
+#ifdef USE_GSL
+
+	gsl_vector c = theta.to_gsl_vector();
 	const gsl_vector y = y_vector.to_gsl_vector();
-	const gsl_matrix X_mat_gsl = X_mat.to_gsl_matrix();
+	const gsl_matrix H_mat_gsl = H.to_gsl_matrix();
 
 	gsl_matrix* cov = NULL;
 	gsl_multifit_linear_workspace * work = NULL;
 
-	auto deinit = [&]() {
+	auto dealloc = [&]() {
 		gsl_multifit_linear_free(work);
 		gsl_matrix_free(cov);
 	};
@@ -39,18 +38,27 @@ real_t SystemIdentification::linear_regression(const Matrix& X_mat, const Vector
 	}
 	work = gsl_multifit_linear_alloc(n_observ, n_params);
 	if (work == NULL) {
-		deinit();
+		dealloc();
 		throw exception_NULLPTR;
 
 	}
 	real_t chisq;
 	exception_code returnval = exception_OK;
-	returnval = gsl_error_code_to_return_code(gsl_multifit_linear(&X_mat_gsl, &y, &c, cov, &chisq, work));
-	deinit();
+	returnval = exception_code(gsl_multifit_linear(&H_mat_gsl, &y, &c, cov, &chisq, work));
+	dealloc();
 	if (returnval != exception_OK)
-		throw returnval;
+	throw returnval;
 	return chisq;
+#else
 
+	Matrix HTH(n_params, n_params);
+	const MatrixTranspose HT=MatrixTranspose(H);
+	const VectorReal HTy=HT.multiply(y_vector);
+	HTH.multiply(HT,H);
+	HTH.solve(HTy,theta);
+
+	return 0;
+#endif
 }
 
 real_t SystemIdentification::polynomial_fit(const VectorReal& x_vector, const VectorReal& y_vector, Polynom& polynom, size_t degree) {
@@ -142,12 +150,10 @@ real_t SystemIdentification::estimate_discrete_transfer_function(const VectorRea
 	return chisq;
 
 }
-#endif
 
 SystemIdentification::RecursiveLeastSquares::RecursiveLeastSquares(size_t n_params, real_t P0_initial_values) :
 		Pk_0(n_params, n_params), Pk_1(n_params, n_params), YhT(n_params, n_params), theta(n_params), Y(n_params) {
 	reset(P0_initial_values);
-
 }
 
 void SystemIdentification::RecursiveLeastSquares::reset(real_t P0_initial_values) {
@@ -163,7 +169,6 @@ void SystemIdentification::RecursiveLeastSquares::reset(real_t P0_initial_values
 	Y.set_all(0);
 	YhT.set_all_elements(0);
 	error = 0;
-
 }
 
 real_t SystemIdentification::RecursiveLeastSquares::estimate(const VectorReal& hk_1, real_t yk_1) {
@@ -182,58 +187,57 @@ real_t SystemIdentification::RecursiveLeastSquares::estimate(const VectorReal& h
 	gsl_matrix YhT = this->YhT.to_gsl_matrix();
 
 	exception_code returnval = exception_OK;
-	returnval = gsl_error_code_to_return_code(gsl_matrix_memcpy(&Pk_0, &Pk_1)); //Pk_0=Pk_1
+	returnval = exception_code(gsl_matrix_memcpy(&Pk_0, &Pk_1)); //Pk_0=Pk_1
 	if (returnval != exception_OK)
-		throw returnval;
+	throw returnval;
 
 	real_t y_estimated_k_1 = 0;
-	returnval = gsl_error_code_to_return_code(gsl_blas_ddot(&hk_1_gsl, &theta, &y_estimated_k_1)); //y_estimated_k_1=hk_1_T*theta
+	returnval = exception_code(gsl_blas_ddot(&hk_1_gsl, &theta, &y_estimated_k_1));//y_estimated_k_1=hk_1_T*theta
 	if (returnval != exception_OK)
-		throw returnval;
+	throw returnval;
 
 	error = yk_1 - y_estimated_k_1;
 
-	returnval = gsl_error_code_to_return_code(gsl_blas_dgemv(CblasNoTrans, 1, &Pk_0, &hk_1_gsl, 0, &Y)); //Pk_0*hk_1
+	returnval = exception_code(gsl_blas_dgemv(CblasNoTrans, 1, &Pk_0, &hk_1_gsl, 0, &Y));//Pk_0*hk_1
 	if (returnval != exception_OK)
-		throw returnval;
+	throw returnval;
 	real_t rho = 0;
 
-	returnval = gsl_error_code_to_return_code(gsl_blas_ddot(&hk_1_gsl, &Y, &rho)); //rho=hk_1_T*Pk_0*hk_1
+	returnval = exception_code(gsl_blas_ddot(&hk_1_gsl, &Y, &rho));//rho=hk_1_T*Pk_0*hk_1
 	if (returnval != exception_OK)
-		throw returnval;
+	throw returnval;
 	rho += lambda;
-	returnval = gsl_error_code_to_return_code(gsl_vector_scale(&Y, 1.0 / rho));
+	returnval = exception_code(gsl_vector_scale(&Y, 1.0 / rho));
 	if (returnval != exception_OK)
-		throw returnval;
+	throw returnval;
 
 	gsl_matrix Yk_1_mat = gsl_matrix_view_vector(&Y, Y.size, 1).matrix;
 	const gsl_matrix hk_1_T_mat = gsl_matrix_const_view_vector(&hk_1_gsl, 1, hk_1_gsl.size).matrix;
-	returnval = gsl_error_code_to_return_code(gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, -1.0 / lambda, &Yk_1_mat, &hk_1_T_mat, 0, &YhT)); //YhT=Yk_1*hk_1_T
+	returnval = exception_code(gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, -1.0 / lambda, &Yk_1_mat, &hk_1_T_mat, 0, &YhT));//YhT=Yk_1*hk_1_T
 	if (returnval != exception_OK)
-		throw returnval;
+	throw returnval;
 
-	returnval = gsl_error_code_to_return_code(gsl_matrix_add_diagonal(&YhT, 1.0 / lambda));
+	returnval = exception_code(gsl_matrix_add_diagonal(&YhT, 1.0 / lambda));
 	if (returnval != exception_OK)
-		throw returnval;
-	returnval = gsl_error_code_to_return_code(gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1, &YhT, &Pk_0, 0, &Pk_1));
+	throw returnval;
+	returnval = exception_code(gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1, &YhT, &Pk_0, 0, &Pk_1));
 	if (returnval != exception_OK)
-		throw returnval;
+	throw returnval;
 
-	returnval = gsl_error_code_to_return_code(gsl_blas_daxpy(error, &Y, &theta)); //theta_k1=theta_k0+e*Y;
+	returnval = exception_code(gsl_blas_daxpy(error, &Y, &theta));//theta_k1=theta_k0+e*Y;
 	if (returnval != exception_OK)
-		throw returnval;
+	throw returnval;
 
 #else
 
 	Pk_0 = Pk_1;
-	real_t y_estimated_k_1=hk_1.dot_product(theta);
+	real_t y_estimated_k_1 = hk_1.dot_product(theta);
 	error = yk_1 - y_estimated_k_1;
-	const Matrix hk_1_col_mat = VectorReal2colMatrix(hk_1);
-	Matrix Yk_1_col_mat = VectorReal2colMatrix(Y);
-	Yk_1_col_mat.multiply(Pk_0, hk_1_col_mat);
-	real_t rho = hk_1.dot_product(Y)+lambda;
+	Matrix Yk_1_col_mat = Matrix::VectorReal2colMatrix(Y);
+	Pk_0.multiply(hk_1, Y);
+	real_t rho = hk_1.dot_product(Y) + lambda;
 	Y.div(Y, rho);
-	const Matrix hk_1_row_mat = VectorReal2rowMatrix(hk_1);
+	const Matrix hk_1_row_mat = Matrix::VectorReal2rowMatrix(hk_1);
 	YhT.multiply(Yk_1_col_mat, hk_1_row_mat);
 	Matrix YhT_diag = YhT.diagonal();
 	YhT_diag.element_sub(YhT_diag, 1.0);

@@ -1,8 +1,6 @@
 #include "control_synthesis.h"
-#include "wrappers.h"
 
 using namespace SystemControl;
-using namespace Convert;
 
 Complex ControlSynthesis::convert_continuous_root_to_discrete_root(Complex S_root, real_t Ts) {
 	S_root.get_real() *= Ts;
@@ -44,7 +42,7 @@ void ControlSynthesis::create_discrete_polynom_from_multiple_complex_root(Polyno
 }
 
 void ControlSynthesis::create_discrete_aperiodic_polynom_for_multiple_time_constant(Polynom& P, uint multiplicity, real_t Tc, real_t Ts) {
-	const Complex cont_root((real_t)-1 / Tc, 0);
+	const Complex cont_root((real_t) -1 / Tc, 0);
 	Complex disc_root = convert_continuous_root_to_discrete_root(cont_root, Ts);
 	create_discrete_polynom_from_multiple_complex_root(P, multiplicity, disc_root);
 }
@@ -85,7 +83,6 @@ Matrix ControlSynthesis::convolution_matrix(const VectorReal& g, uint f_length) 
 	return convMat;
 }
 
-#ifdef USE_GSL
 void ControlSynthesis::RST_poleplace(const Polynom& A, const Polynom& B, const Polynom& P, Polynom& R, Polynom& S, Polynom& T) {
 
 	A.assert();
@@ -130,58 +127,27 @@ void ControlSynthesis::RST_poleplace(const Polynom& A, const Polynom& B, const P
 	convolution_matrix(A, M_submatrix_A, R_length);
 	convolution_matrix(B, M_submatrix_B, S_length);
 
-	gsl_permutation* perm_gsl = NULL;
-	gsl_vector* X_gsl = NULL;
+	VectorReal X;
+	M.solve(P, X);
 
-	auto dealloc = [&]() {
-		gsl_permutation_free(perm_gsl);
-		gsl_vector_free(X_gsl);
-	};
-
-	gsl_matrix M_gsl = M.to_gsl_matrix();
-	gsl_vector P_gsl = P.to_gsl_vector();
-
-	perm_gsl = gsl_permutation_alloc(P_length);
-	if (perm_gsl == NULL)
-		throw exception_NULLPTR;
-
-	X_gsl = gsl_vector_alloc(P_length);
-	if (X_gsl == NULL) {
-		dealloc();
-		throw exception_NULLPTR;
-	}
-	exception_code returnval = exception_OK;
-
-	returnval = gsl_error_code_to_return_code(gsl_linalg_LU_decomp(&M_gsl, perm_gsl, NULL));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-	returnval = gsl_error_code_to_return_code(gsl_linalg_LU_solve(&M_gsl, perm_gsl, &P_gsl, X_gsl));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-
-	R.load_data(X_gsl->data);
-	S.load_data(X_gsl->data + R_length);
+	R.load_data(X.get_data_ptr());
+	S.load_data(X.get_data_ptr() + R_length);
 	T[0] = P.sum() / B.sum();
 
-	dealloc();
 }
-#endif
+
 
 void ControlSynthesis::PI_poleplace(const System1stOrderParams& system_params, const ReferencePolynom2ndOrder& desired_polynom, PID_regulator_params& regulator_params) {
 
-	regulator_params.P_gain = ((real_t)2.0 * desired_polynom.b * desired_polynom.omega_0 * system_params.T - 1.0) / system_params.K;
+	regulator_params.P_gain = ((real_t) 2.0 * desired_polynom.b * desired_polynom.omega_0 * system_params.T - 1.0) / system_params.K;
 	regulator_params.I_gain = POW2(desired_polynom.omega_0) * system_params.T / system_params.K;
 }
 
 void ControlSynthesis::PIV_poleplace(const System1stOrderParams& system_params, const ReferencePolynom3rdOrder& desired_polynom, PID_regulator_params& IV_regulator_params, PID_regulator_params& P_regulator_params) {
 
-	IV_regulator_params.P_gain = (((real_t)2.0 * desired_polynom.b * desired_polynom.omega_0 + desired_polynom.k) * system_params.T - (real_t)1.0) / system_params.K;
-	IV_regulator_params.I_gain = (POW2(desired_polynom.omega_0) + (real_t)2.0 * desired_polynom.b * desired_polynom.omega_0 * desired_polynom.k) * system_params.T / system_params.K;
-	P_regulator_params.P_gain = (POW2(desired_polynom.omega_0) * desired_polynom.k) / (POW2(desired_polynom.omega_0) + (real_t)2.0 * desired_polynom.b * desired_polynom.omega_0 * desired_polynom.k);
+	IV_regulator_params.P_gain = (((real_t) 2.0 * desired_polynom.b * desired_polynom.omega_0 + desired_polynom.k) * system_params.T - (real_t) 1.0) / system_params.K;
+	IV_regulator_params.I_gain = (POW2(desired_polynom.omega_0) + (real_t) 2.0 * desired_polynom.b * desired_polynom.omega_0 * desired_polynom.k) * system_params.T / system_params.K;
+	P_regulator_params.P_gain = (POW2(desired_polynom.omega_0) * desired_polynom.k) / (POW2(desired_polynom.omega_0) + (real_t) 2.0 * desired_polynom.b * desired_polynom.omega_0 * desired_polynom.k);
 
 }
 

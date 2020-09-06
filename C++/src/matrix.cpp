@@ -1,33 +1,33 @@
 #include "matrix.h"
-#include "wrappers.h"
 
 using namespace SystemControl;
-using namespace Convert;
 
 void Matrix::assert() const throw (exception_code) {
 #ifdef ASSERT_NULLPTR
 	if (data_ptr == NULL)
-		throw exception_NULLPTR;
+		throw exception_code(exception_NULLPTR);
 #endif
 #ifdef ASSERT_DIMENSIONS
 	if (n_cols == 0 || n_rows == 0)
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	if (allocation_info == allocation_type_unallocated)
-		throw exception_ERROR;
+		throw exception_code(exception_ERROR);
 
 }
 
-void Matrix::init(size_t n_rows, size_t n_cols, real_t* data_ptr) throw (exception_code) {
+void Matrix::init(size_t n_rows, size_t n_cols, size_t n_cols_mem, real_t* data_ptr) throw (exception_code) {
 
 	if (n_cols == 0 || n_rows == 0)
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 	if (allocation_info != allocation_type_unallocated)
-		throw exception_ERROR;
+		throw exception_code(exception_ERROR);
+	if (n_cols_mem == 0)
+		n_cols_mem = n_cols;
 	if (data_ptr == NULL) {
 		data_ptr = (real_t*) malloc(n_rows * n_cols * sizeof(real_t));
 		if (data_ptr == NULL)
-			throw exception_NULLPTR;
+			throw exception_code(exception_NULLPTR);
 		memset(data_ptr, 0, n_rows * n_cols * sizeof(real_t));
 		allocation_info = allocation_type_dynamic;
 	} else {
@@ -36,7 +36,7 @@ void Matrix::init(size_t n_rows, size_t n_cols, real_t* data_ptr) throw (excepti
 	this->data_ptr = data_ptr;
 	this->n_rows = n_rows;
 	this->n_cols = n_cols;
-	this->n_cols_mem = n_cols;
+	this->n_cols_mem = n_cols_mem;
 
 }
 
@@ -58,8 +58,8 @@ void Matrix::deinit() {
 
 }
 
-Matrix::Matrix(size_t n_rows, size_t n_cols, real_t* data_ptr) throw (exception_code) {
-	init(n_rows, n_cols, data_ptr);
+Matrix::Matrix(size_t n_rows, size_t n_cols, real_t* data_ptr, size_t n_cols_mem) throw (exception_code) {
+	init(n_rows, n_cols, n_cols_mem, data_ptr);
 
 }
 
@@ -72,9 +72,14 @@ Matrix::~Matrix() {
 }
 
 Matrix::Matrix(const Matrix& matSrc, bool copy_data) throw (exception_code) :
-		Matrix(matSrc.n_rows, matSrc.n_cols) {
-	if (copy_data)
-		load_data(matSrc.data_ptr);
+		Matrix(matSrc.n_rows, matSrc.n_cols, NULL, matSrc.n_cols_mem) {
+	if (copy_data) {
+		auto lambda = [](auto& A_i,auto B_i,auto i,auto j)->auto {
+			A_i=B_i;
+			return true;
+		};
+		for_each(matSrc, lambda);
+	}
 }
 #ifdef USE_GSL
 Matrix::Matrix(const gsl_matrix& gsl_mat) throw (exception_code) {
@@ -91,14 +96,11 @@ Matrix Matrix::submatrix(size_t n_rows, size_t n_cols, size_t row_offset, size_t
 	assert();
 #ifdef ASSERT_DIMENSIONS
 	if (n_rows + row_offset > this->n_rows)
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 	if (n_cols + col_offset > this->n_cols)
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
-	Matrix mat(n_rows, n_cols, ptr_at(row_offset, col_offset));
-	mat.n_cols_mem = n_cols_mem;
-	return mat;
-
+	return Matrix(n_rows, n_cols, ptr_at(row_offset, col_offset), n_cols_mem);
 }
 Matrix Matrix::row(size_t row_number) throw (exception_code) {
 	return submatrix(1, n_cols, row_number, 0);
@@ -109,9 +111,23 @@ Matrix Matrix::column(size_t column_number) throw (exception_code) {
 
 Matrix Matrix::diagonal() throw (exception_code) {
 	assert();
-	Matrix mat(MIN(n_rows, n_cols), 1, data_ptr);
-	mat.n_cols_mem = n_cols_mem + 1;
-	return mat;
+	return Matrix(MIN(n_rows, n_cols), 1, data_ptr, n_cols_mem + 1);
+}
+
+Matrix Matrix::VectorReal2rowMatrix(VectorReal& V) {
+	return Matrix(1, V.get_length(), V.get_data_ptr());
+}
+
+Matrix Matrix::VectorReal2colMatrix(VectorReal& V) {
+	return Matrix(V.get_length(), 1, V.get_data_ptr());
+}
+
+const Matrix Matrix::VectorReal2rowMatrix(const VectorReal& V) {
+	return Matrix(1, V.get_length(), V.get_data_ptr());
+}
+
+const Matrix Matrix::VectorReal2colMatrix(const VectorReal& V) {
+	return Matrix(V.get_length(), 1, V.get_data_ptr());
 }
 
 #ifdef USE_GSL
@@ -128,7 +144,7 @@ gsl_matrix* Matrix::to_gsl_matrix_dynamic_copy() const throw (exception_code) {
 	const gsl_matrix gsl_mat_src = to_gsl_matrix();
 	gsl_matrix* gsl_mat_dst = gsl_matrix_alloc(n_rows, n_cols);
 	if (gsl_mat_dst == NULL)
-	throw exception_NULLPTR;
+	throw exception_code(exception_NULLPTR);
 	gsl_matrix_memcpy(gsl_mat_dst, &gsl_mat_src);
 	return gsl_mat_dst;
 }
@@ -138,7 +154,7 @@ gsl_matrix* Matrix::to_gsl_matrix_dynamic_copy() const throw (exception_code) {
 real_t& Matrix::at_safe(uint row, uint col) throw (exception_code) {
 	assert();
 	if (row >= n_rows || col >= n_cols)
-		throw exception_INDEX_OUT_OF_RANGE;
+		throw exception_code(exception_INDEX_OUT_OF_RANGE);
 	return this->at(row, col);
 
 }
@@ -146,7 +162,7 @@ real_t& Matrix::at_safe(uint row, uint col) throw (exception_code) {
 real_t Matrix::at_safe(uint row, uint col) const throw (exception_code) {
 	assert();
 	if (row >= n_rows || col >= n_cols)
-		throw exception_INDEX_OUT_OF_RANGE;
+		throw exception_code(exception_INDEX_OUT_OF_RANGE);
 	return this->at(row, col);
 
 }
@@ -178,7 +194,7 @@ void Matrix::for_each(const Matrix& matSrc, F lambda) throw (exception_code) {
 
 #ifdef ASSERT_DIMENSIONS
 	if (!matDst.equal_dimensions(matSrc))
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	for (uint i = 0; i < n_rows; i++) {
 		for (uint j = 0; j < n_cols; j++) {
@@ -203,7 +219,7 @@ void Matrix::for_diagonal(const Matrix& matSrc, F lambda) throw (exception_code)
 
 #ifdef ASSERT_DIMENSIONS
 	if (!matDst.equal_dimensions(matSrc))
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 
 	uint min_dim = MIN(n_rows, n_cols);
@@ -222,7 +238,7 @@ void Matrix::for_each(const Matrix& matSrcA, const Matrix& matSrcB, F lambda) th
 
 #ifdef ASSERT_DIMENSIONS
 	if (!matDst.equal_dimensions(matSrcA) || !matDst.equal_dimensions(matSrcB))
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 
 	for (uint i = 0; i < n_rows; i++) {
@@ -256,13 +272,16 @@ void Matrix::load_data(const real_t* data_ptr) throw (exception_code) {
 	assert();
 #ifdef ASSERT_NULLPTR
 	if (data_ptr == NULL)
-		throw exception_NULLPTR;
+		throw exception_code(exception_NULLPTR);
 #endif
-	memcpy((void*) this->data_ptr, (const void*) data_ptr, n_rows * n_cols * sizeof(real_t));
-
+	auto lambda = [&](auto& A_i,auto i,auto j)->auto {
+		A_i=data_ptr[i*n_cols+j];
+		return true;
+	};
+	for_each(lambda);
 }
 
-Matrix Matrix::transpose()const throw (exception_code) {
+Matrix Matrix::transpose() const throw (exception_code) {
 
 	assert();
 	Matrix mat_T(n_cols, n_rows);
@@ -274,18 +293,12 @@ Matrix Matrix::transpose()const throw (exception_code) {
 	return mat_T;
 }
 
-void Matrix::transpose()throw (exception_code)
-{
-	assert();
-	const Matrix mat=*this;
-	Matrix mat_T=mat.transpose();
-	*this=mat_T;
-}
+
 
 Matrix& Matrix::multiply(const Matrix& matA, const Matrix& matB) throw (exception_code) {
 
 	if (this == &matA || this == &matB)
-		throw exception_ERROR;
+		throw exception_code(exception_ERROR);
 
 	matA.assert();
 	matB.assert();
@@ -300,16 +313,16 @@ Matrix& Matrix::multiply(const Matrix& matA, const Matrix& matB) throw (exceptio
 
 #ifdef ASSERT_DIMENSIONS
 	if (matA.n_cols != matB.n_rows)
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 	if (matDst.n_rows != matA.n_rows || matDst.n_cols != matB.n_cols)
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 
 #ifdef USE_GSL
-	gsl_matrix A_gsl = matA.to_gsl_matrix();
-	gsl_matrix B_gsl = matB.to_gsl_matrix();
+	const gsl_matrix A_gsl = matA.to_gsl_matrix();
+	const gsl_matrix B_gsl = matB.to_gsl_matrix();
 	gsl_matrix C_gsl = matDst.to_gsl_matrix();
-	exception_code returnval = gsl_error_code_to_return_code(gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, &A_gsl, &B_gsl, 0.0, &C_gsl));
+	exception_code returnval = exception_code(gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, &A_gsl, &B_gsl, 0.0, &C_gsl));
 	if (returnval != exception_OK)
 	throw returnval;
 #else
@@ -317,9 +330,9 @@ Matrix& Matrix::multiply(const Matrix& matA, const Matrix& matB) throw (exceptio
 		for (uint j = 0; j < n_cols; j++) {
 			real_t sum = 0;
 			for (uint n = 0; n < matA.n_cols; n++) {
-				sum += matA.at(i, n) * matB.at(n, j);
+				sum += matA(i, n) * matB(n, j);
 			}
-			matDst.at(i, j) = sum;
+			matDst(i, j) = sum;
 		}
 	}
 
@@ -336,26 +349,65 @@ Matrix Matrix::multiply(const Matrix& matB) const throw (exception_code) {
 	return matDst;
 }
 
-Matrix& Matrix::multiply_by_scalar_and_accumulate(const Matrix& matSrc, real_t scalar_value) throw (exception_code) {
+VectorReal& Matrix::multiply(const VectorReal& X, VectorReal& Y) const throw (exception_code) {
+	const Matrix& A = *this;
+	if (&X == &Y)
+		throw exception_code(exception_ERROR);
+	X.assert();
+	A.assert();
 
-	Matrix& matDst = *this;
-	auto lambda = [scalar_value](auto& Dst_i,auto Src_i,auto i,auto j)->auto {Dst_i+=(Src_i*scalar_value);return true;};
-	matDst.for_each(matSrc, lambda);
-	return *this;
+	try {
+		Y.assert();
+	} catch (...) {
+		Y = VectorReal(n_rows);
+	}
+
+#ifdef ASSERT_DIMENSIONS
+	if (n_cols != X.get_length())
+		throw exception_code(exception_WRONG_DIMENSIONS);
+	if (n_rows != Y.get_length())
+		throw exception_code(exception_WRONG_DIMENSIONS);
+#endif
+
+#ifdef USE_GSL
+	const gsl_matrix A_gsl = A.to_gsl_matrix();
+	const gsl_vector X_gsl = X.to_gsl_vector();
+	gsl_vector Y_gsl = Y.to_gsl_vector();
+	exception_code returnval = exception_code(gsl_blas_dgemv(CblasNoTrans, 1.0, &A_gsl, &X_gsl, 0.0, &Y_gsl));
+	if (returnval != exception_OK)
+	throw returnval;
+#else
+	for (uint i = 0; i < n_rows; i++) {
+		real_t sum = 0;
+		for (uint n = 0; n < n_cols; n++) {
+			sum += A(i, n) * X[n];
+		}
+		Y[i] = sum;
+	}
+#endif
+	return Y;
+}
+VectorReal Matrix::multiply(const VectorReal& X) const throw (exception_code) {
+	VectorReal Y(n_rows);
+	multiply(X, Y);
+	return Y;
 }
 
 Matrix& Matrix::operator=(const Matrix& matSrc) throw (exception_code) {
 	matSrc.assert();
 	if (!equal_dimensions(matSrc)) {
 		deinit();
-		init(matSrc.n_rows, matSrc.n_cols);
+		init(matSrc.n_rows, matSrc.n_cols, matSrc.n_cols_mem);
 	}
-	load_data(matSrc.data_ptr);
+	auto lambda = [](auto& A_i,auto B_i,auto i,auto j)->auto {
+		A_i=B_i;
+		return true;
+	};
+	for_each(matSrc, lambda);
 	return *this;
 }
 
 Matrix& Matrix::operator=(real_t scalar_value) throw (exception_code) {
-
 	set_all_elements(scalar_value);
 	return *this;
 }
@@ -414,15 +466,15 @@ Matrix& Matrix::element_div(const Matrix& B, real_t value) throw (exception_code
 
 Matrix Matrix::operator+(const Matrix& matB) const throw (exception_code) {
 	const Matrix& matA = *this;
-	Matrix matDst(matA.n_rows, matA.n_cols);
-	matDst.element_add(matDst, matB);
+	Matrix matDst(matA, false);
+	matDst.element_add(matA, matB);
 	return matDst;
 }
 
 Matrix Matrix::operator-(const Matrix& matB) const throw (exception_code) {
 	const Matrix& matA = *this;
-	Matrix matDst(matA.n_rows, matA.n_cols);
-	matDst.element_sub(matDst, matB);
+	Matrix matDst(matA, false);
+	matDst.element_sub(matA, matB);
 	return matDst;
 }
 
@@ -432,21 +484,21 @@ Matrix Matrix::operator*(const Matrix& matB) const throw (exception_code) {
 
 Matrix Matrix::operator+(real_t scalar_value) const throw (exception_code) {
 	const Matrix& matA = *this;
-	Matrix matDst(matA.n_rows, matA.n_cols);
-	matDst.element_add(matDst, scalar_value);
+	Matrix matDst(matA, false);
+	matDst.element_add(matA, scalar_value);
 	return matDst;
 }
 
 Matrix Matrix::operator-(real_t scalar_value) const throw (exception_code) {
 	const Matrix& matA = *this;
-	Matrix matDst(matA.n_rows, matA.n_cols);
-	matDst.element_sub(matDst, scalar_value);
+	Matrix matDst(matA, false);
+	matDst.element_sub(matA, scalar_value);
 	return matDst;
 }
 Matrix Matrix::operator*(real_t scalar_value) const throw (exception_code) {
 	const Matrix& matA = *this;
-	Matrix matDst(matA.n_rows, matA.n_cols);
-	matDst.element_mul(matDst, scalar_value);
+	Matrix matDst(matA, false);
+	matDst.element_mul(matA, scalar_value);
 	return matDst;
 }
 
@@ -519,11 +571,145 @@ Matrix& Matrix::binary_operation(const Matrix& mSrcA, const Matrix& mSrcB, Opera
 	return *this;
 }
 
+VectorReal& Matrix::solve(const VectorReal& B, VectorReal& X) {
+	const Matrix& A = *this;
+	A.assert();
+	B.assert();
+
+#ifdef ASSERT_DIMENSIONS
+	if (!A.is_square())
+		throw exception_WRONG_DIMENSIONS;
+	if (A.n_rows != B.get_length())
+		throw exception_WRONG_DIMENSIONS;
+#endif
+
+	try {
+		X.assert();
+	} catch (...) {
+		X = VectorReal(n_rows);
+	}
+#ifdef ASSERT_DIMENSIONS
+	if (A.n_rows != X.get_length())
+		throw exception_WRONG_DIMENSIONS;
+#endif
+
+#ifdef USE_GSL
+
+	gsl_permutation* P_gsl = NULL;
+	gsl_matrix A_gsl = A.to_gsl_matrix();
+	gsl_vector X_gsl = X.to_gsl_vector();
+
+	auto dealloc = [&]() {
+		gsl_permutation_free(P_gsl);
+	};
+
+	const gsl_vector B_gsl = B.to_gsl_vector();
+
+	P_gsl = gsl_permutation_alloc(n_rows);
+	if (P_gsl == NULL) {
+		dealloc();
+		throw exception_NULLPTR;
+	}
+
+	exception_code returnval = exception_OK;
+
+	returnval = exception_code(gsl_linalg_LU_decomp(&A_gsl, P_gsl, NULL));
+	if (returnval != exception_OK) {
+		dealloc();
+		throw returnval;
+	}
+	returnval = exception_code(gsl_linalg_LU_solve(&A_gsl, P_gsl, &B_gsl, &X_gsl));
+	if (returnval != exception_OK) {
+		dealloc();
+		throw returnval;
+	}
+	dealloc();
+
+#else
+	MatrixPermRow(*this).LU_solve(B, X);
+#endif
+	return X;
+}
+
+
+MatrixPermRow& MatrixPermRow::LU_decompose() {
+	MatrixPermRow& A = *this;
+	assert();
+#ifdef ASSERT_DIMENSIONS
+	if (!is_square())
+		throw exception_WRONG_DIMENSIONS;
+#endif
+
+	for (uint i = 0; i < n_rows; i++) {
+		real_t maxA = 0.0;
+		uint imax = i;
+		for (uint k = i; k < n_rows; k++) {
+			real_t absA = fabs(A(k, i));
+			if (absA > maxA) {
+				maxA = absA;
+				imax = k;
+			}
+		}
+		if (maxA < tolerance)
+			throw exception_ERROR;
+		if (imax != i) {
+			swap_rows(imax, i);
+		}
+		for (uint j = i + 1; j < n_rows; j++) {
+			A(j, i) /= A(i, i);
+			for (uint k = i + 1; k < n_rows; k++)
+				A(j, k) -= A(j, i) * A(i, k);
+		}
+	}
+	return A;
+}
+
+VectorReal& MatrixPermRow::LU_subs(const VectorReal& B, VectorReal& X) const {
+	const MatrixPermRow& LU = *this;
+
+	for (int i = 0; i < (int) n_rows; i++) {
+		X[i] = B[permutations[i]];
+		for (int j = 0; j < i; j++) {
+			X[i] -= X[j] * LU(i, j);
+		}
+	}
+	for (int i = n_rows - 1; i >= 0; i--) {
+		for (int j = n_rows - 1; j > i; j--) {
+			X[i] -= X[j] * LU(i, j);
+		}
+		X[i] /= LU(i, i);
+	}
+
+	return X;
+}
+
+VectorReal& MatrixPermRow::LU_solve(const VectorReal& B, VectorReal& X) {
+	const MatrixPermRow& LU = *this;
+
+	assert();
+	B.assert();
+	try {
+		X.assert();
+	} catch (...) {
+		X = VectorReal(n_rows);
+	}
+#ifdef ASSERT_DIMENSIONS
+	if (!is_square())
+		throw exception_WRONG_DIMENSIONS;
+	if (n_rows != B.get_length() || n_rows != X.get_length())
+		throw exception_WRONG_DIMENSIONS;
+#endif
+
+	LU_decompose();
+	LU.LU_subs(B, X);
+	return X;
+}
+
 Matrix& Matrix::exp(const Matrix& mat_base, uint series_order) throw (exception_code) {
 
 	mat_base.assert();
-	if(series_order>20)
-		throw exception_ERROR;
+	if (series_order > 20)
+		throw exception_code(exception_ERROR);
 
 	try {
 		assert();
@@ -534,13 +720,21 @@ Matrix& Matrix::exp(const Matrix& mat_base, uint series_order) throw (exception_
 
 #ifdef ASSERT_DIMENSIONS
 	if (!mat_base.is_square())
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 	if (!mat_exp.is_square())
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 	if (!mat_exp.equal_dimensions(mat_base))
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
-	mat_exp=0;
+
+#ifdef USE_GSL
+	const gsl_matrix mat_base_gls = mat_base.to_gsl_matrix();
+	gsl_matrix mat_exp_gls = mat_exp.to_gsl_matrix();
+	exception_code returnval = exception_code(gsl_linalg_exponential_ss(&mat_base_gls, &mat_exp_gls, GSL_MODE_DEFAULT));
+	if (returnval != exception_OK)
+	throw returnval;
+#else
+	mat_exp = 0;
 	Matrix mat_power_i_0(mat_base, false);
 	Matrix mat_power_i_1(mat_base, false);
 	mat_power_i_0.set_identity();
@@ -554,6 +748,8 @@ Matrix& Matrix::exp(const Matrix& mat_base, uint series_order) throw (exception_
 		mat_power_i_0 = mat_power_i_1;
 		i_factorial *= (i + 1);
 	}
+#endif
+
 	return mat_exp;
 }
 
@@ -569,11 +765,11 @@ Matrix& Matrix::power(const Matrix& mat_base, uint power) throw (exception_code)
 
 #ifdef ASSERT_DIMENSIONS
 	if (!mat_base.is_square())
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 	if (!mat_pow.is_square())
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 	if (!mat_pow.equal_dimensions(mat_base))
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 
 	Matrix mat_power_i0(mat_base, false);

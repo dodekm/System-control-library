@@ -1,8 +1,6 @@
 #include "discrete_systems.h"
-#include "wrappers.h"
 
 using namespace SystemControl;
-using namespace Convert;
 
 DiscreteSystem::DiscreteSystem(size_t input_port_width, real_t* input_port_ptr, size_t output_port_width, real_t* output_port_ptr) :
 		System(system_type_dynamic_system, system_time_domain_discrete, input_port_width, input_port_ptr, output_port_width, output_port_ptr) {
@@ -24,9 +22,7 @@ real_t DiscreteSystem::step(real_t u) {
 }
 
 DiscreteSystemSISO::DiscreteSystemSISO() :
-		DiscreteSystem(1, &input, 1, &output) {
-	input = 0;
-	output = 0;
+		DiscreteSystem(1, &input, 1, &output), input(0), output(0) {
 }
 
 DiscreteSystemMIMO::DiscreteSystemMIMO(size_t input_port_width, real_t* input_port_ptr, size_t output_port_width, real_t* output_port_ptr) :
@@ -73,13 +69,13 @@ void DiscreteTransferFunction::step_function(const Vector<signal_realtime_T>& in
 	}
 	input_states.shift();
 
-	size_t order =get_order();
+	size_t order = get_order();
 	for (uint i = 0; i < order; i++) {
 		y += -denominator_coeffs[i] * output_states[i];
 	}
 	y /= denominator_coeffs[order];
 
-	y = saturate(y);
+	y = modify_output(y);
 	output_states.sample(y);
 	output_states.shift();
 	*y_ptr = y;
@@ -115,25 +111,83 @@ void DiscreteStateSpace::step_function(const Vector<signal_realtime_T>& input_si
 	gsl_vector Xk_1_gsl = Xk_1.to_gsl_vector();
 
 	exception_code returnval = exception_OK;
-	returnval = gsl_error_code_to_return_code(gsl_blas_dgemv(CblasNoTrans, 1.0, &A_gsl, &Xk_0_gsl, 0.0, &Xk_1_gsl));
+	returnval = exception_code(gsl_blas_dgemv(CblasNoTrans, 1.0, &A_gsl, &Xk_0_gsl, 0.0, &Xk_1_gsl));
 	if (returnval != exception_OK)
-		throw returnval;
-	returnval = gsl_error_code_to_return_code(gsl_blas_daxpy(u, &B_gsl, &Xk_1_gsl));
+	throw returnval;
+	returnval = exception_code(gsl_blas_daxpy(u, &B_gsl, &Xk_1_gsl));
 	if (returnval != exception_OK)
-		throw returnval;
-	returnval = gsl_error_code_to_return_code(gsl_blas_ddot(&C_gsl, &Xk_0_gsl, &y));
+	throw returnval;
+	returnval = exception_code(gsl_blas_ddot(&C_gsl, &Xk_0_gsl, &y));
 	if (returnval != exception_OK)
-		throw returnval;
+	throw returnval;
 
 #else
-	VectorReal2colMatrix(Xk_1).multiply(A, VectorReal2colMatrix(Xk_0));
-	VectorReal2colMatrix(Xk_1).multiply_by_scalar_and_accumulate(VectorReal2colMatrix(B), u);
-	y=C.dot_product(Xk_0);
+	A.multiply(Xk_0, Xk_1);
+	Xk_1.multiply_by_scalar_and_accumulate(B, u);
+	y = C.dot_product(Xk_0);
 
 #endif
-	y = saturate(y);
+	y = modify_output(y);
 	*y_ptr = y;
 
+}
+
+DiscreteLuenbergObserver::DiscreteLuenbergObserver(size_t order, real_t* A_data_ptr, real_t* B_data_ptr, real_t* C_data_ptr, real_t* L_data_ptr, real_t* Xk_0_data_ptr, real_t* Xk_1_data_ptr) :
+		StateSpace(order, System::system_time_domain_discrete, A_data_ptr, B_data_ptr, C_data_ptr), DiscreteSystemMIMO(2, input_signals_data, 1, output_signals_data), L(order, L_data_ptr), Xk_0(order, Xk_0_data_ptr), Xk_1(order, Xk_1_data_ptr) {
+	states_set(0.0);
+}
+void DiscreteLuenbergObserver::states_set(const real_t* X_ptr) {
+	Xk_1.load_data(X_ptr);
+}
+void DiscreteLuenbergObserver::states_set(real_t X_values) {
+	Xk_1.set_all(X_values);
+}
+
+void DiscreteLuenbergObserver::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+
+	const real_t u = *input_signals.at(0).ptr;
+	const real_t y_meas = *input_signals.at(1).ptr;
+	real_t* y_ptr = output_signals.at(0).ptr;
+	real_t y = 0;
+
+	Xk_0 = Xk_1;
+
+#ifdef USE_GSL
+
+	const gsl_matrix A_gsl = A.to_gsl_matrix();
+	const gsl_vector B_gsl = B.to_gsl_vector();
+	const gsl_vector C_gsl = C.to_gsl_vector();
+	const gsl_vector L_gsl = L.to_gsl_vector();
+
+	const gsl_vector Xk_0_gsl = Xk_0.to_gsl_vector();
+	gsl_vector Xk_1_gsl = Xk_1.to_gsl_vector();
+
+	exception_code returnval = exception_OK;
+	returnval = exception_code(gsl_blas_ddot(&C_gsl, &Xk_0_gsl, &y));
+	if (returnval != exception_OK)
+	throw returnval;
+	e = y_meas - y;
+
+	returnval = exception_code(gsl_blas_dgemv(CblasNoTrans, 1.0, &A_gsl, &Xk_0_gsl, 0.0, &Xk_1_gsl));
+	if (returnval != exception_OK)
+	throw returnval;
+	returnval = exception_code(gsl_blas_daxpy(u, &B_gsl, &Xk_1_gsl));
+	if (returnval != exception_OK)
+	throw returnval;
+	returnval = exception_code(gsl_blas_daxpy(e, &L_gsl, &Xk_1_gsl));
+	if (returnval != exception_OK)
+	throw returnval;
+
+#else
+
+	y = C.dot_product(Xk_0);
+	e = y_meas - y;
+
+	A.multiply(Xk_0, Xk_1);
+	Xk_1.multiply_by_scalar_and_accumulate(B, u);
+	Xk_1.multiply_by_scalar_and_accumulate(L, e);
+#endif
+	*y_ptr = y;
 }
 
 Discrete_RST_Regulator::Discrete_RST_Regulator(size_t R_order, size_t S_order, size_t T_order, real_t* R_coeffs_ptr, real_t* S_coeffs_ptr, real_t* T_coeffs_ptr, real_t* u_states_ptr, real_t* y_states_ptr, real_t* w_states_ptr) :
@@ -184,7 +238,7 @@ void Discrete_RST_Regulator::step_function(const Vector<signal_realtime_T>& inpu
 
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != 2 || output_signals.get_length() != 1)
-		throw exception_WRONG_DIMENSIONS;
+	throw exception_WRONG_DIMENSIONS;
 #endif
 
 	const real_t w = *input_signals.at(0).ptr;
@@ -209,7 +263,7 @@ void Discrete_RST_Regulator::step_function(const Vector<signal_realtime_T>& inpu
 	}
 	u /= R_coeffs[R_coeffs.get_length() - 1];
 
-	u = saturate(u);
+	u = modify_output(u);
 	u_states.sample(u);
 	u_states.shift();
 	*u_ptr = u;
@@ -269,7 +323,7 @@ void DiscreteIIRfilterDFII::step_function(const Vector<signal_realtime_T>& input
 		y += numerator_coeffs[i] * states[i];
 	}
 	states.shift();
-	y = saturate(y);
+	y = modify_output(y);
 	*y_ptr = y;
 
 }
@@ -307,7 +361,7 @@ void DiscreteFIRfilter::step_function(const Vector<signal_realtime_T>& input_sig
 		y += coeffs[i] * states[i];
 	}
 	states.shift();
-	y = saturate(y);
+	y = modify_output(y);
 	*y_ptr = y;
 
 }
@@ -434,21 +488,21 @@ void DiscretePSDregulator::step_function(const Vector<signal_realtime_T>& input_
 	real_t u_S = 0;
 	real_t u_D = 0;
 
-	if (S_gain != (real_t)0) {
+	if (S_gain != (real_t) 0) {
 		sumator.input_port_real_value(0) = e + get_AW_correction();
 		sumator.step();
 		u_S = S_gain * sumator.output_port_real_value(0);
 	}
-	if (D_gain != (real_t)0) {
+	if (D_gain != (real_t) 0) {
 		diference.input_port_real_value(0) = e;
 		diference.step();
 		u_D = D_gain * diference.output_port_real_value(0);
 	}
-	if (P_gain != (real_t)0) {
+	if (P_gain != (real_t) 0) {
 		u_P = P_gain * e;
 	}
 	u = u_P + u_S + u_D;
-	u = apply_AW_saturation(u);
+	u = DiscreteAntiWindup::modify_output(u);
 	*u_ptr = u;
 
 }
@@ -459,18 +513,23 @@ DiscreteIntegrator::DiscreteIntegrator(approximation_method method, real_t sampl
 	denominator_coeffs_data[1] = 1.0;
 	denominator_coeffs_data[0] = -1.0;
 
-	if (method == approximation_method_backward_euler) {
+	switch (method) {
+	case approximation_method_backward_euler:
 		numerator_coeffs_data[1] = sample_time;
 		numerator_coeffs_data[0] = 0;
-	} else if (method == approximation_method_forward_euler) {
+		break;
+	case approximation_method_forward_euler:
 		numerator_coeffs_data[1] = 0;
 		numerator_coeffs_data[0] = sample_time;
-	} else if (method == approximation_method_trapezoidal_rule) {
+		break;
+	case approximation_method_trapezoidal_rule:
 		numerator_coeffs_data[1] = sample_time / 2.0;
 		numerator_coeffs_data[0] = sample_time / 2.0;
-	} else {
+		break;
+	default:
 		throw exception_ERROR;
 	}
+
 	real_t output_initial_states[] = { initial_condition, initial_condition };
 	states_set(NULL, output_initial_states);
 
@@ -479,25 +538,29 @@ DiscreteIntegrator::DiscreteIntegrator(approximation_method method, real_t sampl
 DiscreteDerivative::DiscreteDerivative(approximation_method method, real_t sample_time, real_t N_gain, real_t initial_condition) :
 		DiscreteTransferFunctionFirstOrder(1, 1, numerator_coeffs_data, denominator_coeffs_data, input_states_data, output_states_data) {
 
-	if (method == approximation_method_backward_euler) {
+	switch (method) {
+	case approximation_method_backward_euler:
 		numerator_coeffs_data[1] = N_gain;
 		numerator_coeffs_data[0] = -N_gain;
 		denominator_coeffs_data[1] = N_gain * sample_time + 1.0;
 		denominator_coeffs_data[0] = -1.0;
-	} else if (method == approximation_method_forward_euler) {
+		break;
+	case approximation_method_forward_euler:
 		numerator_coeffs_data[1] = N_gain;
 		numerator_coeffs_data[0] = -N_gain;
 		denominator_coeffs_data[1] = 1.0;
 		denominator_coeffs_data[0] = N_gain * sample_time - 1.0;
-	} else if (method == approximation_method_trapezoidal_rule) {
+		break;
+	case approximation_method_trapezoidal_rule:
 		numerator_coeffs_data[1] = N_gain;
 		numerator_coeffs_data[0] = -N_gain;
 		denominator_coeffs_data[1] = N_gain * sample_time / 2.0 + 1.0;
 		denominator_coeffs_data[0] = N_gain * sample_time / 2.0 - 1.0;
-	} else {
+		break;
+	default:
 		throw exception_ERROR;
-	}
 
+	}
 	real_t input_initial_states[] = { initial_condition, initial_condition };
 	states_set(input_initial_states, NULL);
 
@@ -508,7 +571,6 @@ DiscretePIDregulator::DiscretePIDregulator(real_t sample_time, real_t P_gain, re
 	this->P_gain = P_gain;
 	this->I_gain = I_gain;
 	this->D_gain = D_gain;
-
 }
 
 void DiscretePIDregulator::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
@@ -521,21 +583,44 @@ void DiscretePIDregulator::step_function(const Vector<signal_realtime_T>& input_
 	real_t u_I = 0;
 	real_t u_D = 0;
 
-	if (I_gain != (real_t)0) {
+	if (I_gain != (real_t) 0) {
 		integrator.input_port_real_value(0) = e + get_AW_correction();
 		integrator.step();
 		u_I = I_gain * integrator.output_port_real_value(0);
 	}
-	if (D_gain != (real_t)0) {
+	if (D_gain != (real_t) 0) {
 		derivator.input_port_real_value(0) = e;
 		derivator.step();
 		u_D = D_gain * derivator.output_port_real_value(0);
 	}
-	if (P_gain != (real_t)0) {
+	if (P_gain != (real_t) 0) {
 		u_P = P_gain * e;
 	}
 	u = u_P + u_I + u_D;
-	u = apply_AW_saturation(u);
+	u = DiscreteAntiWindup::modify_output(u);
+	*u_ptr = u;
+}
+DiscretePIregulator::DiscretePIregulator(real_t sample_time, real_t P_gain, real_t I_gain, approximation_method method) :
+		integrator(method, sample_time) {
+	this->P_gain = P_gain;
+	this->I_gain = I_gain;
+}
+
+void DiscretePIregulator::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+
+	const real_t e = *input_signals.at(0).ptr;
+	real_t* u_ptr = output_signals.at(0).ptr;
+
+	real_t u = 0;
+	real_t u_P = 0;
+	real_t u_I = 0;
+
+	integrator.input_port_real_value(0) = e + get_AW_correction();
+	integrator.step();
+	u_I = I_gain * integrator.output_port_real_value(0);
+	u_P = P_gain * e;
+	u = u_P + u_I;
+	u = DiscreteAntiWindup::modify_output(u);
 	*u_ptr = u;
 }
 
@@ -549,11 +634,11 @@ void DiscreteIPregulator::step_function(const Vector<signal_realtime_T>& input_s
 
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != 2 || output_signals.get_length() != 1)
-		throw exception_WRONG_DIMENSIONS;
+	throw exception_WRONG_DIMENSIONS;
 #endif
 
 	const real_t e = *input_signals.at(0).ptr;
-	const real_t y = *input_signals.at(0).ptr;
+	const real_t y = *input_signals.at(1).ptr;
 	real_t* u_ptr = output_signals.at(0).ptr;
 	real_t u, u_P, u_I;
 
@@ -562,7 +647,7 @@ void DiscreteIPregulator::step_function(const Vector<signal_realtime_T>& input_s
 	u_I = I_gain * integrator.output_port_real_value(0);
 	u_P = P_gain * (-y);
 	u = u_P + u_I;
-	u = apply_AW_saturation(u);
+	u = DiscreteAntiWindup::modify_output(u);
 	*u_ptr = u;
 }
 

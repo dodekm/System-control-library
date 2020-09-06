@@ -1,8 +1,7 @@
 #include "polynom.h"
-#include "wrappers.h"
 
 using namespace SystemControl;
-using namespace Convert;
+
 
 real_t Polynom::eval(real_t x) const {
 	assert();
@@ -155,7 +154,7 @@ void Polynom::roots_GSL(VectorComplex& roots) const {
 	gsl_poly_complex_workspace * w = gsl_poly_complex_workspace_alloc(length);
 	if (w == NULL)
 		throw exception_NULLPTR;
-	exception_code returnval = gsl_error_code_to_return_code(gsl_poly_complex_solve((double*) this->get_data_ptr(), length, w, (double*) roots.get_data_ptr()));
+	exception_code returnval = exception_code(gsl_poly_complex_solve((double*) this->get_data_ptr(), length, w, (double*) roots.get_data_ptr()));
 	gsl_poly_complex_workspace_free(w);
 
 	if (returnval != exception_OK)

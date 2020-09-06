@@ -1,11 +1,8 @@
 #include "systems_analyze.h"
-
-#include "signal_process.h"
+#include "vector_numeric.h"
 #include "polynom.h"
-#include "wrappers.h"
 
 using namespace SystemControl;
-using namespace Convert;
 
 Complex SystemsConvert::continuous_root_to_discrete_root(Complex S_root, real_t Ts) {
 	S_root = S_root * Complex(Ts);
@@ -338,15 +335,46 @@ void StateSpace::to_discrete_Taylor_series(StateSpace& ss_disc, real_t Ts, uint 
 		ss_disc.A.element_add(ss_disc.A, A_cont_power_i_1);
 		n_factorial *= (i + 1);
 		Ts_power *= Ts;
-		VectorReal2colMatrix(A_cont_power_B_i_1).multiply(A_cont_power_i_0, VectorReal2colMatrix(ss_cont.B));
-		VectorReal2colMatrix(ss_disc.B).multiply_by_scalar_and_accumulate(VectorReal2colMatrix(A_cont_power_B_i_1), Ts_power / (double) n_factorial);
+		A_cont_power_i_0.multiply(ss_cont.B, A_cont_power_B_i_1);
+		ss_disc.B.multiply_by_scalar_and_accumulate(A_cont_power_B_i_1, Ts_power / (double) n_factorial);
 		A_cont_power_i_1.multiply(A_cont_power_i_0, ss_cont.A);
 		A_cont_power_i_0 = A_cont_power_i_1;
 	}
 	ss_disc.C = ss_cont.C;
 }
 
-#ifdef USE_GSL
+void StateSpace::to_discrete(StateSpace& ss_disc, real_t Ts) const {
+
+	const StateSpace& ss_cont = *this;
+	if (Ts <= 0)
+		throw exception_ERROR;
+	ss_cont.assert();
+	try {
+		ss_disc.assert();
+	} catch (...) {
+		ss_disc = StateSpace(get_order(), System::system_time_domain_discrete);
+	}
+
+#ifdef ASSERT_DIMENSIONS
+	if (ss_cont.get_order() != ss_disc.get_order())
+		throw exception_WRONG_DIMENSIONS;
+#endif
+
+	Matrix AT = A * Ts;
+	Matrix eAT;
+	eAT.exp(AT);
+	ss_disc.A = eAT;
+	Matrix& A_disc_minus_identity = eAT;
+	Matrix A_disc_minus_identity_diag = A_disc_minus_identity.diagonal();
+	A_disc_minus_identity_diag -= 1.0;
+	Matrix A_cont(A);
+	VectorReal X;
+	A_cont.solve(B,X);
+	A_disc_minus_identity.multiply(X, ss_disc.B);
+	ss_disc.C = ss_cont.C;
+
+}
+
 void StateSpace::set_gain(real_t gain) {
 
 	real_t gain_old = get_gain();
@@ -354,69 +382,18 @@ void StateSpace::set_gain(real_t gain) {
 	C.mul(C, k);
 }
 real_t StateSpace::get_gain() const {
-
 	assert();
-	gsl_matrix* A_gsl = NULL;
-	gsl_permutation* P_gsl = NULL;
-	gsl_vector* X_gsl = NULL;
-
-	auto dealloc = [&]() {
-		gsl_permutation_free(P_gsl);
-		gsl_vector_free(X_gsl);
-		gsl_matrix_free(A_gsl);
-	};
-
-	A_gsl = A.to_gsl_matrix_dynamic_copy();
-	if (A_gsl == NULL) {
-		throw exception_NULLPTR;
-	}
-	const gsl_vector B_gsl = B.to_gsl_vector();
-
-	P_gsl = gsl_permutation_alloc(get_order());
-	if (P_gsl == NULL) {
-		dealloc();
-		throw exception_NULLPTR;
-	}
-	X_gsl = gsl_vector_calloc(get_order());
-	if (X_gsl == NULL) {
-		dealloc();
-		throw exception_NULLPTR;
-	}
-	exception_code returnval = exception_OK;
-	returnval = gsl_error_code_to_return_code(gsl_matrix_scale(A_gsl, -1));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
+	Matrix A_copy(A);
+	A_copy *= (-1.0);
 	if (time_domain == System::system_time_domain_discrete) {
-		returnval = gsl_error_code_to_return_code(gsl_matrix_add_diagonal(A_gsl, 1));
-		if (returnval != exception_OK) {
-			dealloc();
-			throw returnval;
-		}
+		A_copy.diagonal() += 1.0;
 	}
-	returnval = gsl_error_code_to_return_code(gsl_linalg_LU_decomp(A_gsl, P_gsl, NULL));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-	returnval = gsl_error_code_to_return_code(gsl_linalg_LU_solve(A_gsl, P_gsl, &B_gsl, X_gsl));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-
-	const gsl_vector C_gsl = C.to_gsl_vector();
-	real_t gain = 0;
-	returnval = gsl_error_code_to_return_code(gsl_blas_ddot(&C_gsl, X_gsl, &gain));
-	dealloc();
-
-	if (returnval != exception_OK) {
-		throw returnval;
-	}
-	return gain;
-
+	VectorReal X(get_order());
+	A_copy.solve(B, X);
+	return C.dot_product(X);
 }
+
+#ifdef USE_GSL
 void StateSpace::get_poles(VectorComplex& poles) const {
 
 	assert();
@@ -428,7 +405,7 @@ void StateSpace::get_poles(VectorComplex& poles) const {
 
 #ifdef ASSERT_DIMENSIONS
 	if (poles.get_length() != get_order())
-	throw exception_WRONG_DIMENSIONS;
+		throw exception_WRONG_DIMENSIONS;
 #endif
 
 	gsl_matrix* A_gsl = NULL;
@@ -456,110 +433,66 @@ void StateSpace::get_poles(VectorComplex& poles) const {
 		dealloc();
 		throw exception_NULLPTR;
 	}
-	exception_code returnval = gsl_error_code_to_return_code(gsl_eigen_nonsymmv(A_gsl, &eval, evec, w));
+	exception_code returnval = exception_code(gsl_eigen_nonsymmv(A_gsl, &eval, evec, w));
 	dealloc();
 	if (returnval != exception_OK)
-	throw returnval;
+		throw returnval;
 
 }
 void StateSpace::get_zeros(VectorComplex& zeros) const {
 
 	assert();
+	Matrix eigen_A(get_order() + 1, get_order() + 1);
+	Matrix eigen_B(get_order() + 1, get_order() + 1);
+	VectorComplex alpha(get_order() + 1);
+	VectorReal beta(get_order() + 1);
+
+	Matrix eigen_A_submatrix = eigen_A.submatrix(get_order(), get_order(), 0, 0);
+	Matrix eigen_A_last_col_submatrix = eigen_A.submatrix(get_order(), 1, 0, get_order());
+	Matrix eigen_A_last_row_submatrix = eigen_A.submatrix(1, get_order(), get_order(), 0);
+
+	eigen_A_submatrix = A;
+	eigen_A_last_col_submatrix = Matrix::VectorReal2colMatrix(B);
+	eigen_A_last_row_submatrix = Matrix::VectorReal2rowMatrix(C);
+
+	Matrix lambda_I = eigen_B.submatrix(get_order(), get_order(), 0, 0);
+	lambda_I.set_identity();
 
 	gsl_eigen_gen_workspace* w = NULL;
-	gsl_matrix* eigen_A = NULL;
-	gsl_matrix* eigen_B = NULL;
-	gsl_vector_complex * alpha = NULL;
-	gsl_vector * beta = NULL;
-
-	const gsl_matrix A_gsl = A.to_gsl_matrix();
-	const gsl_matrix B_gsl = VectorReal2colMatrix(B).to_gsl_matrix();
-	const gsl_matrix C_gsl = VectorReal2rowMatrix(C).to_gsl_matrix();
-
-	auto dealloc = [&]() {
-		gsl_eigen_gen_free(w);
-		gsl_vector_complex_free(alpha);
-		gsl_vector_free(beta);
-		gsl_matrix_free(eigen_A);
-		gsl_matrix_free(eigen_B);
-	};
-
-	alpha = gsl_vector_complex_calloc(get_order() + 1);
-	if (alpha == NULL) {
-		throw exception_NULLPTR;
-	}
-	beta = gsl_vector_calloc(get_order() + 1);
-	if (beta == NULL) {
-		dealloc();
-		throw exception_NULLPTR;
-	}
 	w = gsl_eigen_gen_alloc(get_order() + 1);
-	if (w == NULL) {
-		dealloc();
+	if (w == NULL)
 		throw exception_NULLPTR;
-	}
-	eigen_A = gsl_matrix_calloc(get_order() + 1, get_order() + 1);
-	if (eigen_A == NULL) {
-		dealloc();
-		throw exception_NULLPTR;
-	}
-	eigen_B = gsl_matrix_calloc(get_order() + 1, get_order() + 1);
-	if (eigen_B == NULL) {
-		dealloc();
-		throw exception_NULLPTR;
-	}
 
-	gsl_matrix eigen_A_submatrix = gsl_matrix_submatrix(eigen_A, 0, 0, get_order(), get_order()).matrix;
-	gsl_matrix eigen_A_last_col_submatrix = gsl_matrix_submatrix(eigen_A, 0, get_order(), get_order(), 1).matrix;
-	gsl_matrix eigen_A_last_row_submatrix = gsl_matrix_submatrix(eigen_A, get_order(), 0, 1, get_order()).matrix;
+	gsl_matrix eigen_A_gsl = eigen_A.to_gsl_matrix();
+	gsl_matrix eigen_B_gsl = eigen_B.to_gsl_matrix();
+	gsl_vector_complex alpha_gsl = alpha.to_gsl_vector();
+	gsl_vector beta_gsl = beta.to_gsl_vector();
 
 	exception_code returnval = exception_OK;
-	returnval = gsl_error_code_to_return_code(gsl_matrix_memcpy(&eigen_A_submatrix, &A_gsl));
+	returnval = exception_code(gsl_eigen_gen(&eigen_A_gsl, &eigen_B_gsl, &alpha_gsl, &beta_gsl, w));
+	gsl_eigen_gen_free(w);
 	if (returnval != exception_OK) {
-		dealloc();
 		throw returnval;
 	}
-	returnval = gsl_error_code_to_return_code(gsl_matrix_memcpy(&eigen_A_last_col_submatrix, &B_gsl));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-	returnval = gsl_error_code_to_return_code(gsl_matrix_memcpy(&eigen_A_last_row_submatrix, &C_gsl));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-	gsl_matrix lambda_I = gsl_matrix_submatrix(eigen_B, 0, 0, get_order(), get_order()).matrix;
-	gsl_matrix_set_identity(&lambda_I);
-
-	returnval = gsl_error_code_to_return_code(gsl_eigen_gen(eigen_A, eigen_B, alpha, beta, w));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-	uint n_zeros = 0;
 	VectorComplex zeros_temp(get_order() + 1);
+	uint n_zeros = 0;
 	for (uint i = 0; i < get_order() + 1; i++) {
-		real_t beta_i = gsl_vector_get(beta, i);
+		real_t beta_i = beta[i];
 		if (beta_i != 0.0 && beta_i != NAN) {
-			Complex lambda = Complex(gsl_vector_complex_get(alpha, i)) / Complex(beta_i);
-			zeros_temp[n_zeros] = lambda;
+			zeros_temp[n_zeros] = alpha[i] / Complex(beta_i);
 			n_zeros++;
 		}
 	}
-
 	try {
 		zeros.assert();
 	} catch (...) {
 		zeros = VectorComplex(n_zeros);
 	}
-
 #ifdef ASSERT_DIMENSIONS
 	if (zeros.get_length() != n_zeros)
-	throw exception_WRONG_DIMENSIONS;
+		throw exception_WRONG_DIMENSIONS;
 #endif
 	zeros = zeros_temp.subvector(n_zeros, 0);
-	dealloc();
 
 }
 bool StateSpace::is_stable() const {
@@ -569,129 +502,6 @@ bool StateSpace::is_stable() const {
 	return SystemsAnalyze::roots_stability(poles, time_domain);
 }
 
-void StateSpace::to_discrete(StateSpace& ss_disc, real_t Ts) const {
-
-	const StateSpace& ss_cont = *this;
-	if (Ts <= 0)
-	throw exception_ERROR;
-	ss_cont.assert();
-	try {
-		ss_disc.assert();
-	} catch (...) {
-		ss_disc = StateSpace(get_order(), System::system_time_domain_discrete);
-	}
-
-#ifdef ASSERT_DIMENSIONS
-	if (ss_cont.get_order() != ss_disc.get_order())
-	throw exception_WRONG_DIMENSIONS;
-#endif
-
-	gsl_matrix* A_cont_gsl = NULL;
-	gsl_matrix* A_cont_inv_gsl = NULL;
-	gsl_vector* A_cont_inv_mul_B_cont = NULL;
-	gsl_matrix* eAT_gsl = NULL;
-	gsl_permutation* P_gsl = NULL;
-	gsl_matrix A_disc_gsl = ss_disc.A.to_gsl_matrix();
-	gsl_vector B_disc_gsl = ss_disc.B.to_gsl_vector();
-	const gsl_vector B_cont_gsl = ss_cont.B.to_gsl_vector();
-	size_t order = ss_cont.get_order();
-
-	auto dealloc = [&]() {
-		gsl_matrix_free(A_cont_gsl);
-		gsl_matrix_free(A_cont_inv_gsl);
-		gsl_matrix_free(eAT_gsl);
-		gsl_vector_free(A_cont_inv_mul_B_cont);
-		gsl_permutation_free(P_gsl);
-	};
-
-	A_cont_gsl = ss_cont.A.to_gsl_matrix_dynamic_copy();
-	if (A_cont_gsl == NULL) {
-		throw exception_NULLPTR;
-	}
-	A_cont_inv_gsl = ss_cont.A.to_gsl_matrix_dynamic_copy();
-	if (A_cont_inv_gsl == NULL) {
-		dealloc();
-		throw exception_NULLPTR;
-	}
-
-	A_cont_inv_gsl = gsl_matrix_alloc(order, order);
-	if (A_cont_inv_gsl == NULL) {
-		dealloc();
-		throw exception_NULLPTR;
-	}
-	exception_code returnval = exception_OK;
-	returnval = gsl_error_code_to_return_code(gsl_matrix_memcpy(A_cont_inv_gsl, A_cont_gsl));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-	eAT_gsl = gsl_matrix_alloc(order, order);
-	if (eAT_gsl == NULL) {
-		dealloc();
-		throw exception_NULLPTR;
-	}
-
-	returnval = gsl_error_code_to_return_code(gsl_matrix_scale(A_cont_gsl, Ts));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-	gsl_matrix* AT_gsl = A_cont_gsl;
-	returnval = gsl_error_code_to_return_code(gsl_linalg_exponential_ss(AT_gsl, &A_disc_gsl, GSL_MODE_DEFAULT));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-	returnval = gsl_error_code_to_return_code(gsl_matrix_memcpy(eAT_gsl, &A_disc_gsl));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-
-	returnval = gsl_error_code_to_return_code(gsl_matrix_add_diagonal(eAT_gsl, -1));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-	gsl_matrix* eAT_minus_diag = eAT_gsl;
-
-	P_gsl = gsl_permutation_alloc(order);
-	if (P_gsl == NULL) {
-		dealloc();
-		throw exception_NULLPTR;
-	}
-	returnval = gsl_error_code_to_return_code(gsl_linalg_LU_decomp(A_cont_inv_gsl, P_gsl, NULL));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-	returnval = gsl_error_code_to_return_code(gsl_linalg_LU_invx(A_cont_inv_gsl, P_gsl));
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-
-	A_cont_inv_mul_B_cont = gsl_vector_alloc(order);
-	if (A_cont_inv_mul_B_cont == NULL) {
-		dealloc();
-		throw exception_NULLPTR;
-	}
-	returnval = gsl_error_code_to_return_code(gsl_blas_dgemv(CblasNoTrans, 1.0, A_cont_inv_gsl, &B_cont_gsl, 0, A_cont_inv_mul_B_cont));
-	if (returnval != exception_OK)
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-	returnval = gsl_error_code_to_return_code(gsl_blas_dgemv(CblasNoTrans, 1.0, eAT_minus_diag, A_cont_inv_mul_B_cont, 0, &B_disc_gsl));
-	if (returnval != exception_OK)
-	if (returnval != exception_OK) {
-		dealloc();
-		throw returnval;
-	}
-
-	ss_disc.C = ss_cont.C;
-
-}
 void StateSpace::to_transfer_function(TransferFunction& transfer_function) const {
 
 	ZeroPoleGain zpk;
