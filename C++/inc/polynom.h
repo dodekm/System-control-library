@@ -1,7 +1,7 @@
 #ifndef POLYNOM_H_
 #define POLYNOM_H_
 
-#include "signal_process.h"
+#include "vector_numeric.h"
 
 namespace SystemControl {
 

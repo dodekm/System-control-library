@@ -1,9 +1,10 @@
 #ifndef ODE_SOLVER_H_
 #define ODE_SOLVER_H_
 
+
 #include "common_def.h"
+#include "vector_numeric.h"
 #include "matrix.h"
-#include "signal_process.h"
 
 namespace SystemControl
 {

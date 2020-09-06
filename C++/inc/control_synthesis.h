@@ -1,7 +1,8 @@
 #ifndef CONTROL_SYNTHESIS_H_
 #define CONTROL_SYNTHESIS_H_
+
 #include "systems.h"
-#include "signal_process.h"
+#include "vector_numeric.h"
 #include "polynom.h"
 #include "matrix.h"
 
@@ -17,9 +18,8 @@ void create_discrete_aperiodic_polynom_for_multiple_time_constant(Polynom&, uint
 void convolution_matrix(const VectorReal&, Matrix&, uint);
 Matrix convolution_matrix(const VectorReal&, uint);
 
-#ifdef USE_GSL
+
 void RST_poleplace(const Polynom&, const Polynom&, const Polynom&, Polynom&, Polynom&, Polynom&);
-#endif
 void PI_poleplace(const System1stOrderParams&, const ReferencePolynom2ndOrder&, PID_regulator_params&);
 void PIV_poleplace(const System1stOrderParams&, const ReferencePolynom3rdOrder&, PID_regulator_params&, PID_regulator_params&);
 

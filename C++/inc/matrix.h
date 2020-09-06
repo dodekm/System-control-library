@@ -2,6 +2,7 @@
 #define MATRIX_CPP_H_
 
 #include "common_def.h"
+#include "vector_numeric.h"
 
 namespace SystemControl {
 
@@ -11,7 +12,7 @@ public:
 	~Matrix();
 	Matrix() {
 	}
-	Matrix(size_t, size_t, real_t* = NULL) throw (exception_code);
+	Matrix(size_t, size_t, real_t* = NULL,size_t=0) throw (exception_code);
 	Matrix(size_t, size_t, const real_t*) throw (exception_code);
 	Matrix(const Matrix&, bool = true) throw (exception_code);
 	void assert() const throw (exception_code);
@@ -23,10 +24,15 @@ public:
 	gsl_matrix* to_gsl_matrix_dynamic_copy() const throw (exception_code);
 #endif
 
-	inline real_t& at(uint row, uint col) {
+	static Matrix VectorReal2rowMatrix(VectorReal&);
+	static Matrix VectorReal2colMatrix(VectorReal&);
+	static const Matrix VectorReal2rowMatrix(const VectorReal&);
+	static const Matrix VectorReal2colMatrix(const VectorReal&);
+
+	virtual inline real_t& at(uint row, uint col) {
 		return data_ptr[col + row * n_cols_mem];
 	}
-	inline real_t at(uint row, uint col) const {
+	virtual inline real_t at(uint row, uint col) const {
 		return data_ptr[col + row * n_cols_mem];
 	}
 
@@ -91,12 +97,13 @@ public:
 
 	Matrix& multiply(const Matrix&, const Matrix&) throw (exception_code);
 	Matrix multiply(const Matrix&) const throw (exception_code);
-	Matrix& multiply_by_scalar_and_accumulate(const Matrix&, real_t) throw (exception_code);
+	VectorReal& multiply(const VectorReal&, VectorReal&) const throw (exception_code);
+	VectorReal multiply(const VectorReal&) const throw (exception_code);
 
-	Matrix transpose()const throw (exception_code);
-	void transpose() throw (exception_code);
-	Matrix& exp(const Matrix&, uint=10) throw (exception_code);
+	Matrix transpose() const throw (exception_code);
+	Matrix& exp(const Matrix&, uint = 10) throw (exception_code);
 	Matrix& power(const Matrix&, uint) throw (exception_code);
+	VectorReal& solve(const VectorReal&, VectorReal&);
 
 	Matrix submatrix(size_t, size_t, size_t = 0, size_t = 0) throw (exception_code);
 	Matrix row(size_t) throw (exception_code);
@@ -149,16 +156,72 @@ public:
 	void for_diagonal(const Matrix&, F) throw (exception_code);
 
 protected:
-	void init(size_t, size_t, real_t* = NULL) throw (exception_code);
+	void init(size_t, size_t,size_t=0, real_t* = NULL) throw (exception_code);
 	void deinit();
 
-private:
 	size_t n_rows = 0;
 	size_t n_cols = 0;
 	size_t n_cols_mem = 0;
 	allocation_type_enum allocation_info = allocation_type_unallocated;
 	real_t* data_ptr = NULL;
 
+	friend class MatrixTranspose;
+};
+
+template<size_t n_rows_fix, size_t n_cols_fix>
+class MatrixFix: public Matrix {
+
+public:
+	MatrixFix() :
+			Matrix(n_rows_fix, n_cols_fix, data) {
+	}
+private:
+	real_t data[n_rows_fix * n_cols_fix] = { 0 };
+};
+class MatrixTranspose: public Matrix {
+public:
+	MatrixTranspose(Matrix& mat) :
+			Matrix(mat.n_cols, mat.n_rows, mat.data_ptr,mat.n_cols_mem) {
+	}
+	MatrixTranspose(const Matrix& mat) :
+			Matrix(mat.n_cols, mat.n_rows, mat.data_ptr,mat.n_cols_mem) {
+	}
+	inline real_t& at(uint row, uint col) {
+		return Matrix::at(col, row);
+	}
+	inline real_t at(uint row, uint col) const {
+		return Matrix::at(col, row);
+	}
+
+};
+
+class MatrixPermRow: public Matrix {
+
+public:
+	MatrixPermRow(Matrix& mat) :
+			Matrix(mat.get_n_rows(), mat.get_n_cols(), mat.get_data_ptr()), permutations(mat.get_n_rows()) {
+		auto lambda = [&](auto& A_i,auto i)->auto {A_i=i;return true;};
+		permutations.for_each(lambda);
+	}
+	inline real_t& at(uint row, uint col) {
+		return Matrix::at(permutations[row], col);
+	}
+	inline real_t at(uint row, uint col) const {
+		return Matrix::at(permutations[row], col);
+	}
+	void swap_rows(uint i, uint j) {
+		uint tmp = permutations[i];
+		permutations[i] = permutations[j];
+		permutations[j] = tmp;
+	}
+	VectorReal& LU_solve(const VectorReal&, VectorReal&);
+
+private:
+	VectorReal& LU_subs(const VectorReal&, VectorReal&) const;
+	MatrixPermRow& LU_decompose();
+
+	Vector<uint> permutations;
+	static constexpr real_t tolerance = 1e-5;
 };
 
 }

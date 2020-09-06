@@ -10,11 +10,11 @@ namespace SystemControl {
 
 namespace SystemIdentification {
 
-#ifdef USE_GSL
+
 real_t linear_regression(const Matrix&, const VectorReal&, VectorReal&);
 real_t polynomial_fit(const VectorReal&, const VectorReal&, Polynom&, size_t);
 real_t estimate_discrete_transfer_function(const VectorReal&, const VectorReal&, Polynom&, Polynom&, size_t, size_t);
-#endif
+
 
 class RecursiveLeastSquares {
 public:
@@ -40,7 +40,7 @@ private:
 	Matrix YhT;
 	VectorReal theta;
 	VectorReal Y;
-	real_t lambda = 0.995;
+	real_t lambda = 1.0;
 	real_t error = 0;
 };
 void transfer_function_vector_h_iterate(VectorReal&, real_t, real_t, size_t, size_t);

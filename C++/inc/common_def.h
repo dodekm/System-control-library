@@ -8,9 +8,10 @@
 #include <sys/types.h>
 #include <math.h>
 #include <functional>
+#include <exception>
 
-#define ASSERT_NULLPTR ///<configuration macro - enables pointers and structures runtime verification (safe but slower)
-#define ASSERT_DIMENSIONS ///<configuration macro - vectors/ matrices runtime dimensions verification (safe but slower)
+//#define ASSERT_NULLPTR ///<configuration macro - enables pointers and structures runtime verification (safe but slower)
+//#define ASSERT_DIMENSIONS ///<configuration macro - vectors/ matrices runtime dimensions verification (safe but slower)
 //#define USE_GSL ///<configuration macro - enables GNU Scientific Library integration. If not defined - some functions become unavailable
 
 #ifdef USE_GSL
@@ -31,8 +32,8 @@
 #define _DOUBLE 2
 #define _FIXED 3
 //#define NUMERIC_FLOATING_USE _FLOAT ///<configuration macro - common real number data type selection - float
-#define NUMERIC_FLOATING_USE _DOUBLE ///<configuration macro - common real number data type selection - double
-//#define NUMERIC_FLOATING_USE _FIXED
+//#define NUMERIC_FLOATING_USE _DOUBLE ///<configuration macro - common real number data type selection - double
+#define NUMERIC_FLOATING_USE _FLOAT
 
 #ifdef USE_GSL
 #undef NUMERIC_FLOATING_USE
@@ -63,10 +64,93 @@ typedef enum {
 	exception_OK = 0, ///<All OK - function succ./pass
 	exception_ERROR, ///<Generic error
 	exception_NULLPTR, ///<Passed pointer is NULL or malloc failed (returned NULL)
-	exception_INDEX_OUT_OF_RANGE, ///<index check failed (array access)
-	exception_WRONG_DIMENSIONS ///< dimension check failed (matrix or vector)
-} exception_code;
+	exception_INDEX_OUT_OF_RANGE, ///<Index check failed (array access)
+	exception_WRONG_DIMENSIONS ///< Dimension check failed (matrix or vector)
+} exception_code_enum;
 
+class exception_code: public std::exception {
+
+public:
+	exception_code(exception_code_enum value = exception_OK) :
+			value(value) {
+	}
+	exception_code_enum get_value() const {
+		return value;
+	}
+	explicit operator int() {
+		return static_cast<int>(value);
+	}
+	bool operator==(const exception_code& other) const {
+		return this->value == other.value;
+	}
+	bool operator!=(const exception_code& other) const {
+		return this->value != other.value;
+	}
+	exception_code& operator=(const exception_code& other) {
+		this->value = other.value;
+		return *this;
+	}
+	const char* what() const noexcept
+	{
+		switch (value) {
+		case exception_ERROR:
+			return "Generic error";
+		case exception_NULLPTR:
+			return "Passed pointer is NULL or malloc failed (returned NULL)";
+		case exception_INDEX_OUT_OF_RANGE:
+			return "Index check failed (array access)";
+		case exception_WRONG_DIMENSIONS:
+			return "Dimension check failed (matrix or vector)";
+		default:
+			return "Unknown error";
+		}
+	}
+
+#ifdef USE_GSL
+
+	exception_code(int error) {
+		switch (error) {
+		case GSL_SUCCESS:
+			value = exception_OK;
+			break;
+		case GSL_ENOMEM:
+			value = exception_NULLPTR;
+			break;
+		case GSL_EFAULT:
+			value = exception_NULLPTR;
+			break;
+		case GSL_EBADLEN:
+			value = exception_WRONG_DIMENSIONS;
+			break;
+		case GSL_ENOTSQR:
+			value = exception_WRONG_DIMENSIONS;
+			break;
+		default:
+			value = exception_ERROR;
+			break;
+		}
+	}
+
+	int to_gsl_error_code() const {
+		switch (value) {
+		case exception_OK:
+			return GSL_SUCCESS;
+		case exception_ERROR:
+			return GSL_FAILURE;
+		case exception_NULLPTR:
+			return GSL_EFAULT;
+		case exception_WRONG_DIMENSIONS:
+			return GSL_EBADLEN;
+		default:
+			return GSL_FAILURE;
+
+		}
+	}
+#endif
+
+private:
+	exception_code_enum value = exception_OK;
+};
 /**
  * Allocation type info for vectors and matrices.
  */
@@ -104,6 +188,14 @@ typedef enum {
 #define RANDF(A,B) (((real_t) rand() / (real_t) (RAND_MAX))* ((B)-(A))+(A)) ///< random number from interval <a,b>
 #define POW2(X) ((X)*(X))  ///<second power of number/square
 #define POW3(X) ((X)*(X)*(X))///<third power of number/cube
+
+
+template <typename T> void swap(T& a,T& b)
+{
+	T tmp=a;
+	a=b;
+	b=tmp;
+}
 
 namespace Operators {
 
@@ -144,7 +236,7 @@ inline T div(T A, T B) {
 }
 
 inline real_t real_mod(real_t A, real_t B) {
-	return ::fmod((double)A, (double)B);
+	return ::fmod((double) A, (double) B);
 }
 
 inline real_t transform_linear(real_t x, real_t k, real_t q) {
@@ -152,18 +244,18 @@ inline real_t transform_linear(real_t x, real_t k, real_t q) {
 }
 
 inline real_t quantize(real_t x, real_t step) {
-	return ((real_t)(int) (x / step)) * step;
+	return ((real_t) (int) (x / step)) * step;
 }
 
 inline real_t mag2dB(real_t mag) {
 	if (mag > 0.0)
-		return 20.0 * ::log10((double)mag);
+		return 20.0 * ::log10((double) mag);
 	else
 		return NAN;
 }
 
 inline real_t dB2mag(real_t dB) {
-	return ::exp((double)(dB / 20.0 * ::log(10)));
+	return ::exp((double) (dB / 20.0 * ::log(10)));
 }
 }
 }

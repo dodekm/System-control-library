@@ -4,7 +4,6 @@
 
 #include "systems.h"
 
-
 namespace SystemControl {
 
 namespace SystemsAnalyze
@@ -20,7 +19,6 @@ namespace SystemsConvert
 
 Complex continuous_root_to_discrete_root(Complex, real_t);
 Complex discrete_root_to_continuous_root(Complex, real_t);
-
 
 }
 

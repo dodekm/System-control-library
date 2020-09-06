@@ -52,6 +52,71 @@ public:
 			deinit();
 			init(length);
 		}
+
+	}
+	class iterator {
+	public:
+		iterator(T* ptr) :
+				ptr(ptr) {
+		}
+		iterator(const iterator& other) :
+				ptr(other.ptr) {
+		}
+		iterator& operator=(const iterator& other) {
+			this->ptr = other.ptr;
+		}
+		iterator& operator=(T* ptr) {
+			this->ptr = ptr;
+		}
+		T& operator*() {
+			return *ptr;
+		}
+		T operator*() const {
+			return *ptr;
+		}
+		bool operator==(const iterator& other) const {
+			return this->ptr == other.ptr;
+		}
+		bool operator!=(const iterator& other) const {
+			return this->ptr != other.ptr;
+		}
+		iterator& operator++() {
+			ptr++;
+			return *this;
+		}
+		iterator operator++(int) {
+			iterator orig = *this;
+			++*this;
+			return orig;
+		}
+		iterator& operator+=(int offset) {
+			ptr += offset;
+			return *this;
+		}
+		iterator& operator--() {
+			ptr--;
+			return *this;
+		}
+		;
+		iterator operator--(int) {
+			iterator orig = *this;
+			--*this;
+			return orig;
+		}
+		iterator& operator-=(int offset) {
+			ptr -= offset;
+			return *this;
+		}
+	private:
+		T* ptr = NULL;
+	};
+
+	iterator begin() {
+		return iterator(data_ptr);
+	}
+
+	iterator end() {
+		return iterator(data_ptr + length);
 	}
 
 	Vector& operator=(const Vector&) throw (exception_code);
@@ -81,11 +146,23 @@ protected:
 	allocation_type_enum allocation_info = allocation_type_unallocated;
 
 };
+
+template<typename T, size_t length>
+class VectorFix: public Vector<T> {
+
+public:
+	VectorFix() :
+			Vector<T>(length, data) {
+	}
+private:
+	T data[length] = { 0 };
+};
+
 template<typename T>
 T& Vector<T>::at_safe(uint idx) throw (exception_code) {
 	assert();
 	if (idx >= length)
-		throw exception_INDEX_OUT_OF_RANGE;
+		throw exception_code(exception_INDEX_OUT_OF_RANGE);
 	return this->at(idx);
 }
 
@@ -93,7 +170,7 @@ template<typename T>
 T Vector<T>::at_safe(uint idx) const throw (exception_code) {
 	assert();
 	if (idx >= length)
-		throw exception_INDEX_OUT_OF_RANGE;
+		throw exception_code(exception_INDEX_OUT_OF_RANGE);
 	return this->at(idx);
 }
 
@@ -101,14 +178,14 @@ template<typename T>
 void Vector<T>::assert() const throw (exception_code) {
 #ifdef ASSERT_NULLPTR
 	if (data_ptr == NULL)
-		throw exception_NULLPTR;
+		throw exception_code(exception_NULLPTR);
 #endif
 #ifdef ASSERT_DIMENSIONS
 	if (length == 0)
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	if (allocation_info == allocation_type_unallocated)
-		throw exception_ERROR;
+		throw exception_code(exception_ERROR);
 
 }
 
@@ -116,14 +193,14 @@ template<typename T>
 void Vector<T>::init(size_t length, T* data_ptr) throw (exception_code) {
 #ifdef ASSERT_DIMENSIONS
 	if (length == 0)
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	if (allocation_info != allocation_type_unallocated)
-		throw exception_ERROR;
+		throw exception_code(exception_ERROR);
 	if (data_ptr == NULL) {
 		data_ptr = (T*) malloc(length * sizeof(T));
 		if (data_ptr == NULL)
-			throw exception_NULLPTR;
+			throw exception_code(exception_NULLPTR);
 		memset(data_ptr, 0, length * sizeof(T));
 		allocation_info = allocation_type_dynamic;
 	} else {
@@ -155,7 +232,7 @@ Vector<T> Vector<T>::subvector(size_t length, size_t offset) throw (exception_co
 	assert();
 #ifdef ASSERT_DIMENSIONS
 	if (length + offset > this->length)
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	return Vector<T>(length, data_ptr + offset);
 
@@ -166,13 +243,11 @@ const Vector<T> Vector<T>::subvector(size_t length, size_t offset) const throw (
 	assert();
 #ifdef ASSERT_DIMENSIONS
 	if (length + offset > this->length)
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	return Vector<T>(length, data_ptr + offset);
 
 }
-
-
 
 template<typename T>
 void Vector<T>::set_all(T value) throw (exception_code) {
@@ -184,7 +259,7 @@ void Vector<T>::load_data(const T* data_ptr) throw (exception_code) {
 	assert();
 #ifdef ASSERT_NULLPTR
 	if (data_ptr == NULL)
-		throw exception_NULLPTR;
+		throw exception_code(exception_NULLPTR);
 #endif
 	memcpy(this->data_ptr, data_ptr, length * sizeof(T));
 
@@ -243,7 +318,7 @@ void Vector<T>::for_each(const Vector<T>& B, F lambda) throw (exception_code) {
 
 #ifdef ASSERT_DIMENSIONS
 	if (A.length != B.length)
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	for (uint i = 0; i < length; i++) {
 		if (!lambda(A.at(i), B.at(i), i))
@@ -269,10 +344,10 @@ void Vector<T>::for_each(const Vector<T>& A, const Vector<T>& B, F lambda) throw
 
 #ifdef ASSERT_DIMENSIONS
 	if (length != A.length || length != B.length)
-		throw exception_WRONG_DIMENSIONS;
+		throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	for (uint i = 0; i < length; i++) {
-		if (!lambda(A.at(i), B.at(i), this->at(i),i))
+		if (!lambda(A.at(i), B.at(i), this->at(i), i))
 			break;
 	}
 

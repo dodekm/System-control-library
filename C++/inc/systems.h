@@ -39,15 +39,22 @@ public:
 		return output_port.at(idx);
 	}
 	inline real_t& input_port_real_value(uint idx) {
-		return *input_port_struct(idx).ptr;
+		return *input_port.at(idx).ptr;
 	}
 	inline real_t& output_port_real_value(uint idx) {
-		return *output_port_struct(idx).ptr;
+		return *output_port.at(idx).ptr;
 	}
-	inline size_t input_port_size() {
+	inline real_t input_port_real_value(uint idx)const {
+		return *input_port.at(idx).ptr;
+	}
+	inline real_t output_port_real_value(uint idx)const {
+		return *output_port.at(idx).ptr;
+	}
+
+	inline size_t input_port_size() const {
 		return input_port.get_length();
 	}
-	inline size_t output_port_size() {
+	inline size_t output_port_size() const {
 		return output_port.get_length();
 	}
 	virtual void update(real_t, step_type)=0;
@@ -82,9 +89,7 @@ public:
 	static SubSystem connect_serial(Vector<System*>&, Vector<uint>&, Vector<uint>&);
 	static SubSystem connect_paralel(Vector<System*>&, System&);
 	static SubSystem connect_feedback(System&, System&, System&);
-
 	void update(real_t, step_type);
-
 	List<System*> execution_list;
 };
 
@@ -106,20 +111,19 @@ public:
 	}
 	void assert() const;
 	void coeffs_set(const real_t*, const real_t*, const real_t*);
-#ifdef USE_GSL
+
 	void set_gain(real_t);
 	real_t get_gain() const;
+#ifdef USE_GSL
 	void get_poles(VectorComplex&) const;
 	void get_zeros(VectorComplex&) const;
 	bool is_stable() const;
-#endif
-
-	void to_discrete_Taylor_series(StateSpace&, real_t, uint) const;
-#ifdef USE_GSL
-	void to_discrete(StateSpace&, real_t) const;
 	void to_transfer_function(TransferFunction&) const;
 	void to_zero_pole_gain(ZeroPoleGain&) const;
 #endif
+
+	void to_discrete_Taylor_series(StateSpace&, real_t, uint = 10) const;
+	void to_discrete(StateSpace&, real_t) const;
 
 protected:
 	Matrix A;
@@ -225,6 +229,9 @@ public:
 	real_t I_gain = 0;
 	real_t D_gain = 0;
 	PID_regulator_params& get_params() {
+		return *this;
+	}
+	const PID_regulator_params& get_params() const {
 		return *this;
 	}
 };

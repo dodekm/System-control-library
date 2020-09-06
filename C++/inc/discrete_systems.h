@@ -7,12 +7,8 @@ namespace SystemControl {
 
 class Saturation {
 public:
-	inline real_t saturate(real_t y) {
-		y = CLIP_TOP(y, saturation_high);
-		y = CLIP_BOTTOM(y, saturation_low);
-		return y;
-	}
-	inline void set_saturation(real_t saturation_high, real_t saturation_low) {
+
+	void set_saturation(real_t saturation_high, real_t saturation_low) {
 		if (saturation_high < saturation_low)
 			throw exception_ERROR;
 		if (saturation_high == 0.0 || saturation_low == 0.0)
@@ -21,6 +17,15 @@ public:
 		this->saturation_low = saturation_low;
 	}
 protected:
+	real_t saturate(real_t y) {
+		y = CLIP_TOP(y, saturation_high);
+		y = CLIP_BOTTOM(y, saturation_low);
+		return y;
+	}
+	real_t modify_output(real_t y) {
+		return saturate(y);
+	}
+
 	real_t saturation_high = INFINITY;
 	real_t saturation_low = -INFINITY;
 
@@ -32,12 +37,14 @@ public:
 	inline void set_AW_gain(real_t AW_gain) {
 		this->AW_gain = AW_gain;
 	}
-	inline real_t apply_AW_saturation(real_t u_original) {
+
+protected:
+	real_t modify_output(real_t u_original) {
 		real_t u_saturated = saturate(u_original);
 		u_cut = u_saturated - u_original;
 		return u_saturated;
 	}
-	inline real_t get_AW_correction() {
+	real_t get_AW_correction() {
 		return u_cut * AW_gain;
 	}
 private:
@@ -65,6 +72,9 @@ public:
 
 protected:
 	virtual void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&)=0;
+	virtual real_t modify_output(real_t y) {
+		return y;
+	}
 };
 
 class DiscreteSystemSISO: public DiscreteSystem {
@@ -106,7 +116,7 @@ private:
 	uint shift_idx = 0;
 };
 
-class DiscreteTransferFunction: public DiscreteSystemSISO, public TransferFunction, public Saturation {
+class DiscreteTransferFunction: public DiscreteSystemSISO, public TransferFunction {
 
 public:
 	DiscreteTransferFunction(size_t, size_t, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL);
@@ -118,9 +128,10 @@ private:
 	StateBuffer output_states;
 
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+
 };
 
-class DiscreteStateSpace: public StateSpace, public DiscreteSystemSISO, public Saturation {
+class DiscreteStateSpace: public StateSpace, public DiscreteSystemSISO {
 
 public:
 	DiscreteStateSpace(size_t, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL);
@@ -132,6 +143,31 @@ private:
 	VectorReal Xk_1;
 
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+
+};
+
+class DiscreteLuenbergObserver: public StateSpace, public DiscreteSystemMIMO {
+
+public:
+	DiscreteLuenbergObserver(size_t, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL);
+	void states_set(const real_t*);
+	void states_set(real_t = 0);
+	const VectorReal& get_estimate() const {
+		return Xk_1;
+	}
+	real_t get_error() const {
+		return e;
+	}
+private:
+	VectorReal L;
+	VectorReal Xk_0;
+	VectorReal Xk_1;
+	real_t e = 0;
+	real_t input_signals_data[2];
+	real_t output_signals_data[1];
+
+	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+
 };
 
 class Discrete_RST_Regulator: public DiscreteSystemMIMO, public Saturation {
@@ -143,6 +179,7 @@ public:
 	void coeffs_set(const real_t*, const real_t*, const real_t*);
 	SubSystem create_control_loop(DiscreteSystemSISO&);
 private:
+
 	Vector<real_t> R_coeffs;
 	Vector<real_t> S_coeffs;
 	Vector<real_t> T_coeffs;
@@ -154,6 +191,9 @@ private:
 	real_t output_signals_data[1];
 
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	real_t modify_output(real_t y) {
+		return Saturation::modify_output(y);
+	}
 };
 
 class DiscreteIIRfilterDFII: public TransferFunction, public DiscreteSystemSISO, public Saturation {
@@ -166,9 +206,12 @@ private:
 
 	StateBuffer states;
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	real_t modify_output(real_t y) {
+		return Saturation::modify_output(y);
+	}
 };
 
-class DiscreteFIRfilter: public DiscreteSystemSISO, public Saturation {
+class DiscreteFIRfilter: public DiscreteSystemSISO {
 
 public:
 	DiscreteFIRfilter(size_t, real_t* = NULL, real_t* = NULL);
@@ -189,6 +232,7 @@ public:
 private:
 	StateBuffer states;
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+
 };
 
 typedef struct discrete_biquad_section_coeffs {
@@ -206,12 +250,13 @@ typedef struct discrete_biquad_section_states_DF_II {
 } discrete_biquad_section_states_DF_II_T;
 
 class DiscreteBiquadSOSfilterDFI: public DiscreteSystemSISO {
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+
 public:
 	DiscreteBiquadSOSfilterDFI(size_t, discrete_biquad_section_coeffs_T* = NULL, discrete_biquad_section_states_DF_I_T* = NULL);
 private:
 	Vector<discrete_biquad_section_coeffs> coeffs;
 	Vector<discrete_biquad_section_states_DF_I_T> states;
+	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
 
 };
 
@@ -223,12 +268,13 @@ private:
 	Vector<discrete_biquad_section_coeffs> coeffs;
 	Vector<discrete_biquad_section_states_DF_II_T> states;
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+
 };
 
 class DiscreteTransferFunctionFirstOrder: public DiscreteTransferFunction {
 	using DiscreteTransferFunction::DiscreteTransferFunction;
 public:
-
+	DiscreteTransferFunctionFirstOrder():DiscreteTransferFunction(1, 1, numerator_coeffs_data, denominator_coeffs_data, input_states_data, output_states_data){}
 protected:
 	real_t input_states_data[2];
 	real_t output_states_data[2];
@@ -248,6 +294,7 @@ public:
 };
 
 class DiscretePSDregulator: public DiscreteSystemSISO, public PID_regulator_params, public DiscreteAntiWindup {
+
 public:
 	DiscretePSDregulator(real_t, real_t, real_t);
 
@@ -264,18 +311,38 @@ public:
 	DiscreteIntegrator(approximation_method, real_t, real_t = 0);
 };
 
+class DiscreteIntegratorLimited: public DiscreteIntegrator, public Saturation {
+	using DiscreteIntegrator::DiscreteIntegrator;
+private:
+	real_t modify_output(real_t y) {
+		return Saturation::modify_output(y);
+	}
+
+};
+
 class DiscreteDerivative: public DiscreteTransferFunctionFirstOrder {
 public:
-	DiscreteDerivative(approximation_method, real_t, real_t, real_t = 0);
+	DiscreteDerivative(approximation_method, real_t, real_t = 10.0, real_t = 0);
 };
 
 class DiscretePIDregulator: public DiscreteSystemSISO, public PID_regulator_params, public DiscreteAntiWindup {
 
 public:
 	DiscretePIDregulator(real_t, real_t, real_t, real_t, real_t, approximation_method);
+
 private:
 	DiscreteIntegrator integrator;
 	DiscreteDerivative derivator;
+
+	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+};
+
+class DiscretePIregulator: public DiscreteSystemSISO, public PID_regulator_params, public DiscreteAntiWindup {
+
+public:
+	DiscretePIregulator(real_t, real_t, real_t, approximation_method);
+private:
+	DiscreteIntegrator integrator;
 
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
 };

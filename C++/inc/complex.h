@@ -3,8 +3,7 @@
 
 #include "common_def.h"
 
-namespace SystemControl
-{
+namespace SystemControl {
 class Complex;
 class Polar;
 
@@ -32,8 +31,8 @@ public:
 		return imag;
 	}
 	inline Complex operator=(const Complex& B) {
-		real=B.real;
-		imag=B.imag;
+		real = B.real;
+		imag = B.imag;
 		return *this;
 	}
 	inline bool operator==(const Complex& B) const {
@@ -43,6 +42,11 @@ public:
 	inline Complex operator+(const Complex& B) const {
 		const Complex& A = *this;
 		return Complex(A.real + B.real, A.imag + B.imag);
+	}
+	inline Complex& operator+=(const Complex& B) {
+		real += B.real;
+		imag += B.imag;
+		return *this;
 	}
 	inline Complex operator-(const Complex& B) const {
 		const Complex& A = *this;
@@ -66,18 +70,25 @@ public:
 		return Complex(real, -imag);
 	}
 	inline real_t magnitude() const {
-		return ::sqrt((double)(POW2(real) + POW2(imag)));
+		return ::sqrt((double) (POW2(real) + POW2(imag)));
+	}
+	inline real_t magnitude_fast() const {
+		static constexpr real_t alpha = 0.960433870103420;
+		static constexpr real_t beta = 0.397824734759316;
+		real_t a=abs(real);
+		real_t b=abs(imag);
+		return alpha * MAX(a,b ) + beta * MIN(a,b);
 	}
 	inline real_t phase() const {
-		return ::atan2((double)imag, (double)real);
+		return ::atan2((double) imag, (double) real);
 	}
 	inline Complex exp() const {
-		real_t real_exponential = ::exp((double)real);
-		return Complex(real_exponential * ::cos((double)imag), real_exponential * ::sin((double)imag));
+		real_t real_exponential = ::exp((double) real);
+		return Complex(real_exponential * ::cos((double) imag), real_exponential * ::sin((double) imag));
 	}
 
 	inline Complex log() const {
-		return Complex(::log((double)magnitude()), phase());
+		return Complex(::log((double) magnitude()), phase());
 	}
 
 #ifdef USE_GSL
@@ -95,7 +106,7 @@ public:
 
 #endif
 
-private:
+protected:
 	real_t real;
 	real_t imag;
 
@@ -117,13 +128,11 @@ public:
 		return phase;
 	}
 
-private:
+protected:
 	real_t mag;
 	real_t phase;
 
-
 };
-
 
 }
 #endif /* INC_COMPLEX_H_ */

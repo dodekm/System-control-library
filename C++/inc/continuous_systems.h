@@ -1,8 +1,9 @@
 #ifndef CONTINUOUS_SYSTEMS_H_
 #define CONTINUOUS_SYSTEMS_H_
 
+
 #include "systems.h"
-#include "signal_process.h"
+#include "vector_numeric.h"
 #include "ode_solver.h"
 
 namespace SystemControl {

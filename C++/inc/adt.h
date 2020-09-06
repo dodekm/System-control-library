@@ -26,25 +26,85 @@ public:
 
 	inline T& peek_front() throw (exception_code) {
 		if (is_empty())
-			throw exception_ERROR;
+			throw exception_code(exception_ERROR);
 		return front->object;
 	}
 
 	inline T& peek_back() throw (exception_code) {
 		if (is_empty())
-			throw exception_ERROR;
+			throw exception_code(exception_ERROR);
 		return back->object;
 	}
 
 	inline void assert() const throw (exception_code) {
 		if ((front == NULL) ^ (back == NULL))
-			throw exception_ERROR;
+			throw exception_code(exception_ERROR);
 	}
 	List() {
 	}
 
 	~List() {
 		clear();
+	}
+
+	class iterator {
+	public:
+		iterator(Item* item_ptr) :
+				item_ptr(item_ptr) {
+		}
+		iterator(const iterator& other) :
+				item_ptr(other.item_ptr) {
+		}
+		iterator& operator=(const iterator& other) {
+			this->ptr = other.ptr;
+		}
+		iterator& operator=(Item* item_ptr) {
+			this->item_ptr = item_ptr;
+		}
+		T& operator*() {
+			return item_ptr->object;
+		}
+		T operator*() const {
+			return item_ptr->object;
+		}
+		bool operator==(const iterator& other) const {
+			return this->item_ptr == other.item_ptr;
+		}
+		bool operator!=(const iterator& other) const {
+			return this->item_ptr != other.item_ptr;
+		}
+		iterator& operator++() {
+			if (item_ptr == NULL)
+				throw exception_code(exception_NULLPTR);
+			item_ptr = item_ptr->next;
+			return *this;
+		}
+		iterator operator++(int) {
+			iterator orig = *this;
+			++*this;
+			return orig;
+		}
+		iterator& operator--() {
+			if (item_ptr == NULL)
+				throw exception_code(exception_NULLPTR);
+			item_ptr = item_ptr->prev;
+			return *this;
+		}
+		;
+		iterator operator--(int) {
+			iterator orig = *this;
+			--*this;
+			return orig;
+		}
+	private:
+		Item* item_ptr = NULL;
+	};
+
+	iterator begin() {
+		return front;
+	}
+	iterator end() {
+		return back;
 	}
 
 	List(List&, List&) throw (exception_code);
@@ -75,7 +135,7 @@ void List<T>::push_front(T object) throw (exception_code) {
 	assert();
 	Item_T* new_item = (Item_T*) malloc(sizeof(Item_T));
 	if (new_item == NULL)
-		throw exception_NULLPTR;
+		throw exception_code(exception_NULLPTR);
 	new_item->object = object;
 	new_item->prev = NULL;
 	new_item->next = front;
@@ -93,8 +153,7 @@ void List<T>::push_back(T object) throw (exception_code) {
 	assert();
 	Item_T* new_item = (Item_T*) malloc(sizeof(Item_T));
 	if (new_item == NULL)
-		throw exception_NULLPTR;
-
+		throw exception_code(exception_NULLPTR);
 	new_item->object = object;
 	new_item->next = NULL;
 	new_item->prev = back;
@@ -112,7 +171,7 @@ T List<T>::pop_front(void) throw (exception_code) {
 
 	assert();
 	if (is_empty())
-		throw exception_ERROR;
+		throw exception_code(exception_ERROR);
 
 	Item_T* front_item = front;
 	T object = front_item->object;
@@ -134,7 +193,7 @@ T List<T>::pop_back(void) throw (exception_code) {
 
 	assert();
 	if (is_empty())
-		throw exception_ERROR;
+		throw exception_code(exception_ERROR);
 
 	Item_T* back_item = back;
 	T object = back_item->object;
@@ -182,7 +241,7 @@ bool List<T>::for_each(F lambda) const throw (exception_code) {
 
 template<typename T>
 T* List<T>::at(uint idx) throw (exception_code) {
-	T* item_at=NULL;
+	T* item_at = NULL;
 	auto lambda = [&item_at,idx](T& item,uint i)->auto {
 		if(i==idx)
 		{
@@ -194,7 +253,7 @@ T* List<T>::at(uint idx) throw (exception_code) {
 	if (!for_each(lambda)) {
 		return item_at;
 	} else
-		throw exception_INDEX_OUT_OF_RANGE;
+		throw exception_code(exception_INDEX_OUT_OF_RANGE);
 }
 
 template<typename T>
@@ -211,12 +270,12 @@ T List<T>::at(uint idx) const throw (exception_code) {
 	if (!for_each(lambda)) {
 		return item_at;
 	} else
-		throw exception_INDEX_OUT_OF_RANGE;
+		throw exception_code(exception_INDEX_OUT_OF_RANGE);
 
 }
 
 template<typename T>
-void List<T>::clear() {
+void List<T>::clear(){
 	while (1) {
 		try {
 			pop_back();
@@ -247,7 +306,7 @@ List<T>::List(List<T>& listA, List<T>& listB) throw (exception_code) {
 	listA.assert();
 	listB.assert();
 	if (listA.is_empty() || listB.is_empty())
-		throw exception_ERROR;
+		throw exception_code(exception_ERROR);
 
 	front = listA.front;
 	back = listB.back;
