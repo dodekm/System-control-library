@@ -75,9 +75,9 @@ public:
 	inline real_t magnitude_fast() const {
 		static constexpr real_t alpha = 0.960433870103420;
 		static constexpr real_t beta = 0.397824734759316;
-		real_t a=abs(real);
-		real_t b=abs(imag);
-		return alpha * MAX(a,b ) + beta * MIN(a,b);
+		real_t a = abs(real);
+		real_t b = abs(imag);
+		return alpha * MAX(a, b) + beta * MIN(a, b);
 	}
 	inline real_t phase() const {
 		return ::atan2((double) imag, (double) real);
@@ -107,8 +107,13 @@ public:
 #endif
 
 protected:
-	real_t real;
-	real_t imag;
+	union {
+		struct {
+			real_t real;
+			real_t imag;
+		};
+		real_t data[2];
+	};
 
 };
 
@@ -129,9 +134,13 @@ public:
 	}
 
 protected:
-	real_t mag;
-	real_t phase;
-
+	union {
+		struct {
+			real_t mag;
+			real_t phase;
+		};
+		real_t data[2];
+	};
 };
 
 }

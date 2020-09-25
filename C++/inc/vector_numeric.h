@@ -9,15 +9,19 @@ namespace SystemControl {
 
 template<typename T>
 class VectorNumeric: public Vector<T> {
-	using Vector<T>::Vector;
-public:
 
-	VectorNumeric() :
-			Vector<T>() {
+public:
+	using Vector<T>::Vector;
+	VectorNumeric() {
+	}
+
+	VectorNumeric(Vector<T>& vectorSrc) :
+			Vector<T>(vectorSrc) {
 	}
 	VectorNumeric(const Vector<T>& vectorSrc) :
 			Vector<T>(vectorSrc) {
 	}
+
 	void convolute(const VectorNumeric&, const VectorNumeric&);
 	VectorNumeric convolute(const VectorNumeric&) const;
 	void convolute_symetric_kernel(const VectorNumeric&, const VectorNumeric&);
@@ -126,7 +130,7 @@ void VectorNumeric<T>::mean_stdev(T& mean, T& stdev) {
 		sum_of_squares += POW2(A_i);};
 	Vector<T>::for_each(lambda);
 
-	mean = sum / (T)this->length;
+	mean = sum / (T) this->length;
 	T variance = (sum_of_squares - POW2(sum) / (T) this->length) / ((T) (this->length - 1));
 	stdev = sqrt(variance);
 
@@ -359,12 +363,9 @@ void VectorNumeric<T>::filtrate_symetric_kernel(const VectorNumeric& vSrc, const
 }
 
 class VectorReal: public VectorNumeric<real_t> {
-	using VectorNumeric<real_t>::VectorNumeric;
-public:
-	VectorReal() :
-			VectorNumeric<real_t>() {
-	}
 
+public:
+	using VectorNumeric<real_t>::VectorNumeric;
 	real_t dot_product(const VectorReal&) const;
 	void transform_linear(const VectorReal&, real_t, real_t);
 	void diff(const VectorReal&);
@@ -381,12 +382,9 @@ private:
 
 };
 class VectorComplex: public VectorNumeric<Complex> {
-	using VectorNumeric<Complex>::VectorNumeric;
-public:
 
-	VectorComplex() :
-			VectorNumeric<Complex>() {
-	}
+public:
+	using VectorNumeric<Complex>::VectorNumeric;
 	void real_part(VectorReal&) const;
 	VectorReal real_part() const;
 	void imag_part(VectorReal&) const;

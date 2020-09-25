@@ -13,6 +13,9 @@ namespace MotorControl {
 static constexpr real_t sqrt3 = M_SQRT3;
 static constexpr real_t sqrt3div2 = sqrt3 / 2.0F;
 static constexpr real_t two_thirds = 2.0F / 3.0F;
+static constexpr real_t four_thirds = 4.0F / 3.0F;
+
+ 
 static constexpr real_t pi = M_PI;
 static constexpr real_t two_PI = 2.0F * M_PI;
 static constexpr real_t half_PI = M_PI / 2.0F;
@@ -48,7 +51,14 @@ public:
 
 	inline Vector2Phase normalize() const {
 		real_t size = magnitude();
-		static const real_t min_size = 1e-0;
+		static constexpr real_t min_size = 1e-3;
+		if (size < min_size)
+			size += min_size;
+		return Vector2Phase(x / size, y / size);
+	}
+	inline Vector2Phase normalize_fast() const {
+		real_t size = magnitude_fast();
+		static constexpr real_t min_size = 1e-3;
 		if (size < min_size)
 			size += min_size;
 		return Vector2Phase(x / size, y / size);
@@ -83,8 +93,10 @@ public:
 		phaseA, phaseB, phaseC
 	};
 
-	Vector3Phase() {
+	Vector3Phase() :
+			Vector3Phase(NAN, NAN, NAN) {
 	}
+
 	Vector3Phase(real_t a, real_t b, real_t c) :
 			a(a), b(b), c(c) {
 	}
@@ -139,23 +151,26 @@ public:
 	inline bool is_positive() const {
 		return (a >= 0 && b >= 0 && c >= 0);
 	}
-
-	inline Vector3Phase symetricToNonSymmetricPositive() const {
-		real_t min_value = min();
-		return Vector3Phase(a - min_value, b - min_value, c - min_value);
+	inline real_t min() const {
+		return MIN(MIN(a,b), c);
 	}
-	inline Vector3Phase nonSymetricToSymmetric() const {
+	inline real_t max() const {
+		return MAX(MAX(a,b), c);
+	}
+
+	inline Vector3Phase toSymmetric() const {
 		return Vector3Phase((2.0 * a - b - c) / 3.0, (2.0 * b - a - c) / 3.0, (2.0 * c - a - b) / 3.0);
 	}
 
-	real_t a = NAN;
-	real_t b = NAN;
-	real_t c = NAN;
-
+	union {
+		struct {
+			real_t a;
+			real_t b;
+			real_t c;
+		};
+		real_t data[3];
+	};
 private:
-	inline real_t min() const {
-		return MIN(a, MIN(b,c));
-	}
 
 };
 
@@ -229,15 +244,25 @@ public:
 	}
 
 	struct MotorParametersElectrical {
-		real_t Rs = NAN;
-		real_t Ld = NAN;
-		real_t Lq = NAN;
-		real_t Psi_f = NAN;
+		union {
+			struct {
+				real_t Rs;
+				real_t Ld;
+				real_t Lq;
+				real_t Psi_f;
+			};
+			real_t data[4] = { 0 };
+		};
 		uint p;
 	};
 	struct MotorParametersMechanical {
-		real_t J = NAN;
-		real_t B = NAN;
+		union {
+			struct {
+				real_t J;
+				real_t B;
+			};
+			real_t data[2] = { 0 };
+		};
 	};
 
 	struct MotorParameters: MotorParametersElectrical, MotorParametersMechanical {
@@ -249,15 +274,28 @@ public:
 		VoltageInverter(real_t Ucc) :
 				Ucc(Ucc) {
 		}
-		void setVoltage(const Vector3Phase&);
+		virtual void setVoltage(const Vector3Phase&)=0;
 		virtual void setDuty(const Vector3Phase&)=0;
 		virtual void setFreq(uint)=0;
 		virtual real_t getFreq() const=0;
 		virtual void start()=0;
 		virtual void stop()=0;
-	private:
+	protected:
 		real_t Ucc = 0;
 
+	};
+
+	class VoltageInverterSVPWM: public VoltageInverter {
+
+		using VoltageInverter::VoltageInverter;
+	public:
+		void setVoltage(const Vector3Phase&);
+	};
+
+	class VoltageInverterSVPWMmin: public VoltageInverter {
+		using VoltageInverter::VoltageInverter;
+	public:
+		void setVoltage(const Vector3Phase&);
 	};
 
 	class CurrentFeedback {
@@ -281,13 +319,17 @@ public:
 
 	class UpdateCallback {
 	public:
-		virtual Vector3Phase operator()(const Vector3Phase&)=0;
+		~UpdateCallback() {
+		}
+		virtual Vector3Phase operator()(const Vector3Phase& current) {
+			return Vector3Phase(0, 0, 0);
+		}
 	};
 
 	class PositionAndSpeed {
 
 	public:
-		PositionAndSpeed(real_t phi = 0.0, int32_t n_revs = 0, real_t omega = 0.0) :
+		PositionAndSpeed(real_t phi = 0.0, real_t omega = 0.0, int32_t n_revs = 0) :
 				phi(phi), n_revs(n_revs), omega(omega) {
 		}
 
@@ -304,15 +346,19 @@ public:
 	class PositionFeedback {
 	public:
 		virtual PositionAndSpeed getPositionAndSpeed(const Vector2Phase&)=0;
-		virtual void setDirection(int)=0;
 	};
 
-	class BEMF_Observer {
+	class BEMFObserverGeneric {
+	public:
+		virtual Vector2Phase estimate(const Vector2Phase&, const Vector2Phase&, real_t)=0;
+	};
+
+	class BEMFObserverLuenberg: public BEMFObserverGeneric {
 
 	public:
-		BEMF_Observer(const MotorParametersElectrical&, approximation_method, real_t, Complex, Complex);
-		Vector2Phase estimate(const Vector2Phase&, const Vector2Phase&);
-
+		BEMFObserverLuenberg(const MotorParametersElectrical&, approximation_method, real_t, real_t, real_t);
+		BEMFObserverLuenberg(const MotorParametersElectrical&, approximation_method, real_t, Complex, Complex);
+		Vector2Phase estimate(const Vector2Phase&, const Vector2Phase&, real_t = 0);
 	private:
 		real_t g1;
 		real_t g2;
@@ -329,8 +375,8 @@ public:
 		using DiscreteIntegrator::DiscreteIntegrator;
 	public:
 
-		inline void setModulo(real_t mod_value) {
-			this->modulo = mod_value;
+		inline void setModulo(real_t modulo) {
+			this->modulo = modulo;
 		}
 		inline int getIntegerPart() const {
 			return integer_part;
@@ -345,33 +391,44 @@ public:
 		real_t modulo = two_PI;
 	};
 
-	class BEMF_PositionFeedbackPLLGeneric: public PositionFeedback {
+	class BEMFPositionFeedbackPLLGeneric: public PositionFeedback {
 	public:
-		BEMF_PositionFeedbackPLLGeneric(const MotorParametersElectrical& motorParameters, approximation_method method, real_t Ts, real_t P_gain, real_t I_gain) :
+		BEMFPositionFeedbackPLLGeneric(const MotorParametersElectrical& motorParameters, approximation_method method, real_t Ts, real_t P_gain, real_t I_gain) :
 				integrator(method, Ts), PI_regulator(Ts, P_gain, I_gain, method) {
 		}
-
-		virtual PositionAndSpeed getPositionAndSpeed(const Vector2Phase&);
-		inline void setDirection(int direction) {
-			this->direction = direction / abs(direction);
+		PositionAndSpeed getPositionAndSpeed(const Vector2Phase&);
+		inline real_t get_error() const {
+			return error;
 		}
 	protected:
-		void estimate(real_t);
+		virtual real_t calculateError(const Vector2Phase&)=0;
 		PositionAndSpeed phi_omega;
 		DiscreteIntegratorModulo integrator;
-		int direction = 1;
+	private:
+		real_t error = 0;
 	public:
 		DiscretePIregulator PI_regulator;
 
 	};
 
-	class OpenLoopControl {
+	class BEMF_PositionFeedbackPLLStandard: public BEMFPositionFeedbackPLLGeneric {
+		using BEMFPositionFeedbackPLLGeneric::BEMFPositionFeedbackPLLGeneric;
+	private:
+		real_t calculateError(const Vector2Phase&);
+	};
+
+	class BEMF_PositionFeedbackPLLImproved: public BEMFPositionFeedbackPLLGeneric {
+		using BEMFPositionFeedbackPLLGeneric::BEMFPositionFeedbackPLLGeneric;
+	private:
+		real_t calculateError(const Vector2Phase&);
+	};
+
+	class OpenLoopControlGeneric {
+
 	public:
-		OpenLoopControl(real_t Ts, approximation_method method, real_t d_omega, real_t k) :
-				integrator_phi(method, Ts), integrator_omega(method, Ts), uA(k) {
-			set_d_omega(d_omega);
+		OpenLoopControlGeneric(real_t Ts, approximation_method method, real_t dOmega) :
+				integrator_phi(method, Ts), integrator_omega(method, Ts), dOmega(dOmega) {
 		}
-		Vector2Phase operator()(void);
 
 		inline real_t getOmega() const {
 			return integrator_omega.output_port_real_value(0);
@@ -379,197 +436,277 @@ public:
 		inline real_t getPhi() const {
 			return integrator_phi.output_port_real_value(0);
 		}
-		inline void set_d_omega(real_t d_omega) {
-			integrator_omega.input_port_real_value(0) = d_omega;
+		inline void set_dOmega(real_t dOmega) {
+			this->dOmega = dOmega;
 		}
-		inline void set_uA(real_t uA) {
-			this->uA = uA;
+		inline void set_omegaRef(real_t omegaRef) {
+			this->omegaRef = omegaRef;
 		}
-		void setStates(const PositionAndSpeed&);
+		PositionAndSpeed operator()();
 
-	private:
+		void setStates(const PositionAndSpeed&);
+	protected:
+
 		DiscreteIntegratorModulo integrator_phi;
 		DiscreteIntegrator integrator_omega;
-		real_t uA;
+		real_t dOmega;
+		real_t omegaRef = 0;
+		static constexpr real_t omega_error_threshold = 10;
+	};
+
+	class OpenLoopControlIF: public OpenLoopControlGeneric {
+	public:
+		OpenLoopControlIF(real_t Ts, approximation_method method, real_t dOmega, real_t P_gain, real_t I_gain) :
+				OpenLoopControlGeneric(Ts, method, dOmega), iReg(Ts, P_gain, I_gain, method) {
+		}
+		Vector2Phase operator()(const Vector2Phase&);
+
+		inline void set_iRef(real_t iRef) {
+			this->iRef = iRef;
+		}
+		DiscretePIregulator iReg;
+	private:
+
+		real_t iRef = 0;
+
+	};
+
+	class OpenLoopControlUF: public OpenLoopControlGeneric {
+	public:
+		OpenLoopControlUF(real_t Ts, approximation_method method, real_t dOmega, real_t u_per_omega) :
+				OpenLoopControlGeneric(Ts, method, dOmega), u_per_omega(u_per_omega) {
+		}
+		Vector2Phase operator()(const Vector2Phase&);
+
+	private:
+		real_t u_per_omega;
 	};
 
 	class CurrentControl: public UpdateCallback {
 
 	public:
-		CurrentControl(const MotorParametersElectrical& motorParameters, approximation_method method, real_t Ts, real_t P_gain, real_t I_gain, BEMF_Observer& observer, PositionFeedback& positionFeedback) :
-				idReg(Ts, P_gain, I_gain, method), iqReg(Ts, P_gain, I_gain, method), parameters(motorParameters), observer(observer), positionFeedback(positionFeedback), open_loop_control(Ts, method, open_loop_accel, open_loop_uA) {
+		CurrentControl(const MotorParametersElectrical& motorParameters, approximation_method method, real_t Ts, real_t P_gain, real_t I_gain, BEMFObserverGeneric& observer, BEMFPositionFeedbackPLLGeneric& positionFeedback) : //open_loop_control(Ts, method, open_loop_dOmega, open_loop_P_gain, open_loop_I_gain)  //
+							idReg(Ts, P_gain, I_gain, method), iqReg(Ts, P_gain, I_gain, method), parameters(motorParameters), BEMF_observer(observer), positionFeedback(positionFeedback), open_loop_control(Ts, method, open_loop_dOmega) {
+						open_loop_control.set_omegaRef(open_loop_omegaRef);
+					}
+					Vector3Phase operator()(const Vector3Phase&);
+					inline void set_iDQRef(const Vector2Phase& iRef) {
+						iDQRef = iRef;
+					}
+					inline void set_iDRef(real_t iD_ref) {
+						iDQRef.x = iD_ref;
+					}
+					inline void set_iQRef(real_t iQ_ref) {
+						iDQRef.y = iQ_ref;
+					}
 
-		}
-		Vector3Phase operator()(const Vector3Phase&);
-		inline void set_iDQRef(const Vector2Phase& iRef) {
-			iDQRef = iRef;
-		}
-		inline void set_iDRef(real_t iD_ref) {
-			iDQRef.x = iD_ref;
-		}
-		inline void set_iQRef(real_t iQ_ref) {
-			iDQRef.y = iQ_ref;
-		}
+					inline const PositionAndSpeed& get_PositionAndSpeed() const {
+						return phi_omega;
+					}
+					inline const Vector2Phase& get_iDQ() const {
+						return iDQ;
+					}
+					inline const Vector2Phase& get_uAB() const {
+						return uAB;
+					}
+					inline const Vector2Phase& get_BEMF() const {
+						return BEMF;
+					}
+					inline const real_t get_BEMF_magnitude() const {
+						return BEMF.magnitude_fast();
+					}
+					inline real_t getTheta() const {
+						return iDQ.phase();
+					}
+					inline real_t getMoment() const {
+						return 1.5 * parameters.p * (parameters.Psi_f * iDQ.y + (parameters.Ld - parameters.Lq) * iDQ.x * iDQ.y);
+					}
 
-		inline const PositionAndSpeed& get_PositionAndSpeed() const {
-			return phi_omega;
-		}
-		inline const Vector2Phase& get_iDQ() const {
-			return iDQ;
-		}
-		inline const Vector2Phase& get_uAB() const {
-			return uAB;
-		}
-		inline const Vector2Phase& get_BEMF() const {
-			return BEMF;
-		}
-		inline const real_t get_BEMF_magnitude() const {
-			return BEMF.magnitude_fast();
-		}
-		inline real_t getTheta() const {
-			return iDQ.phase();
-		}
-		inline real_t getMoment() const {
-			return 1.5 * parameters.p * (parameters.Psi_f * iDQ.y + (parameters.Ld - parameters.Lq) * iDQ.x * iDQ.y);
-		}
+					inline bool isClosedLoop() const {
+						return closed_loop;
+					}
+					inline void set_decoupling_enable(bool new_state) {
+						decoupling_enable = new_state;
+					}
 
-		inline bool isClosedLoop() const {
-			return closed_loop;
-		}
-		inline void set_cross_compensation_enable(bool new_state) {
-			cross_compensation_enable = new_state;
-		}
+					DiscreteIPregulator idReg;
+					DiscreteIPregulator iqReg;
 
-		DiscretePIregulator idReg;
-		DiscretePIregulator iqReg;
+				private:
+					const MotorParametersElectrical& parameters;
 
-	private:
-		const MotorParametersElectrical& parameters;
+					Vector2Phase iDQRef;
+					Vector2Phase iDQ;
+					Vector2Phase uAB;
+					Vector2Phase BEMF;
+					PositionAndSpeed phi_omega;
 
-		Vector2Phase iDQRef;
-		Vector2Phase iDQ;
-		Vector2Phase uAB;
-		Vector2Phase BEMF;
-		PositionAndSpeed phi_omega;
+					BEMFObserverGeneric& BEMF_observer;
+					BEMFPositionFeedbackPLLGeneric& positionFeedback;
+					bool decoupling_enable = true;
+					bool closed_loop = false;
 
-		BEMF_Observer& observer;
-		PositionFeedback& positionFeedback;
-		bool cross_compensation_enable = true;
-		bool closed_loop = false;
-		OpenLoopControl open_loop_control;
-		static constexpr real_t open_loop_accel = 300;
-		static constexpr real_t open_loop_uA = 0.65;
-		static constexpr real_t omega_threshold_low = 50;
-		static constexpr real_t omega_threshold_high = 275;
-		static constexpr real_t BEMF_threshold_low = 0.25;
-		static constexpr real_t BEMF_threshold_high = 0.5;
-		static constexpr real_t iQ_ref_off_threshold = 0.01;
+					OpenLoopControlGeneric open_loop_control;
 
-	};
+					static constexpr real_t open_loop_dOmega = 400;
+					static constexpr real_t open_loop_omegaRef = 500;
+					static constexpr real_t open_loop_iQRef = 0.5;
 
-	class IdentificationRsLdLq: public UpdateCallback {
+					static constexpr real_t omega_threshold_low = 25;
+					static constexpr real_t omega_threshold_high = 200;
+					static constexpr real_t phi_error_threshold_low = M_PI / 30.0;
+					static constexpr real_t BEMF_mag_threshold_low = 0.15;
+					static constexpr real_t BEMF_mag_threshold_high = 0.5;
 
-	public:
-		IdentificationRsLdLq(uint n_samples, real_t Ts, real_t u_step, bool different_LqLd = false) :
-				different_LqLd(different_LqLd), Ts(Ts), u_step(u_step), id_data(n_samples), iq_data(different_LqLd ? n_samples : 1) {
-			settle_iterations_mechanical = (uint) (settle_time_mechanical / Ts);
-			settle_iterations_electrical = (uint) (settle_time_electrical / Ts);
-		}
-		inline bool is_running() const {
-			return state < state_end;
-		}
-		void reset();
-		Vector3Phase operator()(const Vector3Phase&);
-		void estimate(MotorParametersElectrical&);
-	private:
-		bool different_LqLd = false;
-		uint state = 0;
-		uint idx = 0;
-		real_t Ts = 0.0;
-		real_t u_step = 0.0;
-		VectorReal id_data;
-		VectorReal iq_data;
-		static constexpr uint state_end = 6;
-		static constexpr real_t settle_time_mechanical = 1.5;
-		static constexpr real_t settle_time_electrical = 0.1;
+				};
+				class IdentificationGeneric {
+				public:
+					virtual uint get_length() const=0;
+					inline uint get_idx() const {
+						return idx;
+					}
+					virtual bool is_running() const {
+						return idx < get_length();
+					}
+				protected:
+					uint idx = 0;
+				};
 
-		uint settle_iterations_mechanical;
-		uint settle_iterations_electrical;
+				class IdentificationRsLdLq: public UpdateCallback, public IdentificationGeneric {
 
-	};
+				public:
+					IdentificationRsLdLq(uint n_samples, real_t Ts, const VectorReal& u_vector, bool different_LqLd = false) :
+							different_LqLd(different_LqLd), Ts(Ts), u_vector(u_vector), id_data(n_samples), iq_data(different_LqLd ? n_samples : 1) {
+						u_vector.assert();
+						if (u_vector.get_length() != n_samples)
+							throw exception_code(exception_WRONG_DIMENSIONS);
+						settle_iterations_mechanical = (uint) (settle_time_mechanical / Ts);
+						settle_iterations_electrical = (uint) (settle_time_electrical / Ts);
+					}
+					bool is_running() const {
+						return state < state_end;
+					}
+					uint get_length() const {
+						return id_data.get_length();
+					}
+					void reset();
+					Vector3Phase operator()(const Vector3Phase&);
+					void estimate(MotorParametersElectrical&);
+				private:
+					bool different_LqLd = false;
+					uint state = 0;
+					real_t Ts = 0.0;
+					const VectorReal& u_vector;
+					VectorReal id_data;
+					VectorReal iq_data;
+					static constexpr real_t u_aling = 2.0;
+					static constexpr uint state_end = 6;
+					static constexpr real_t settle_time_mechanical = 1.5;
+					static constexpr real_t settle_time_electrical = 0.1;
 
-	class IdentificationPsi_f {
+					uint settle_iterations_mechanical;
+					uint settle_iterations_electrical;
 
-	public:
-		IdentificationPsi_f(uint n_samples) :
-				psi_f_data(n_samples) {
-		}
-		void operator()(real_t, const Vector2Phase&);
-		void estimate(MotorParametersElectrical&);
+				};
 
-		inline bool is_running() const {
-			return idx < psi_f_data.get_length();
-		}
+				class IdentificationPsi_f: public IdentificationGeneric {
 
-	private:
-		static constexpr real_t omega_min_threshold = 50;
-		uint idx = 0;
-		VectorReal psi_f_data;
+				public:
+					IdentificationPsi_f(uint n_samples) :
+							y(n_samples), H(n_samples, 1) {
+					}
+					void operator()(real_t, const Vector2Phase&);
+					void estimate(MotorParametersElectrical&);
+					uint get_length() const {
+						return y.get_length();
+					}
 
-	};
+				protected:
+					static constexpr real_t omega_min_threshold = 50;
+					VectorReal y;
+					Matrix H;
+				};
 
-	class IdentificationMechanical {
+				class IdentificationPsi_f_improved: public IdentificationPsi_f {
 
-	public:
-		IdentificationMechanical(uint n_samples, real_t Ts) :
-				Ts(Ts), moment_data(n_samples), omega_data(n_samples) {
-		}
+				public:
+					IdentificationPsi_f_improved(uint n_samples, approximation_method method, real_t Ts, real_t N, const MotorParametersElectrical& parameters) :
+							IdentificationPsi_f(n_samples), parameters(parameters), iq_diff(method, Ts, N) {
+					}
+					void operator()(real_t, const Vector2Phase&, const Vector2Phase&);
 
-		void operator()(real_t, real_t);
-		void estimate(MotorParametersMechanical&);
-		inline bool is_running() const {
-			return idx < moment_data.get_length();
-		}
-		void reset();
-	private:
-		uint idx = 0;
-		real_t Ts;
-		VectorReal moment_data;
-		VectorReal omega_data;
+				private:
+					const MotorParametersElectrical& parameters;
+					DiscreteDerivative iq_diff;
+				};
 
-	};
+				class IdentificationMechanical {
 
-	class SpeedControl {
+				public:
+					IdentificationMechanical(uint n_samples, real_t Ts) :
+							Ts(Ts), moment_data(n_samples), omega_data(n_samples) {
+					}
 
-	public:
-		SpeedControl(real_t Ts, real_t P_gain, real_t I_gain, approximation_method method) :
-				regulator(Ts, P_gain, I_gain, method) {
-		}
-		inline void setOmegaRef(real_t omega_ref) {
-			this->omega_ref = omega_ref;
-		}
-		real_t operator()(real_t);
+					void operator()(real_t, real_t);
+					void estimate(MotorParametersMechanical&);
+					inline bool is_running() const {
+						return idx < moment_data.get_length();
+					}
+					inline uint get_idx() const {
+						return idx;
+					}
+					void reset();
+				private:
+					uint idx = 0;
+					real_t Ts;
+					VectorReal moment_data;
+					VectorReal omega_data;
 
-		DiscretePIregulator regulator;
-	private:
-		real_t omega_ref = 0;
-	};
+				};
 
-	class LoadMomentObserver {
-	public:
-		LoadMomentObserver(const MotorParametersMechanical&,approximation_method, real_t, Complex, Complex);
-		real_t estimate(real_t, real_t);
-	private:
-		const MotorParametersMechanical& parameters;
-		real_t g1;
-		real_t g2;
-	public:
-		DiscreteIntegrator omegaIntegrator;
-		DiscreteIntegrator loadMomentIntegrator;
+				class SpeedControl {
 
-	};
+				public:
+					SpeedControl(real_t Ts, real_t P_gain, real_t I_gain, approximation_method method) :
+							regulator(Ts, P_gain, I_gain, method) {
+					}
+					inline void setOmegaRef(real_t omega_ref) {
+						this->omega_ref = omega_ref;
+					}
+					real_t operator()(real_t);
 
-	}
-	}
+					DiscreteIPregulator regulator;
+				private:
+					real_t omega_ref = 0;
+				};
+
+				class LoadMomentObserver {
+				public:
+					LoadMomentObserver(const MotorParametersMechanical&, approximation_method, real_t, real_t, real_t);
+					LoadMomentObserver(const MotorParametersMechanical&, approximation_method, real_t, Complex, Complex);
+					real_t estimate(real_t, real_t);
+				private:
+					real_t g1;
+					real_t g2;
+					const MotorParametersMechanical& parameters;
+
+				public:
+					DiscreteIntegrator omegaIntegrator;
+					DiscreteIntegrator loadMomentIntegrator;
+
+				};
+
+				template<typename T> void sort3(T arr[]) {
+					if (arr[0] > arr[1])
+						swap<T>(arr[0], arr[1]);
+					if (arr[0] > arr[2])
+						swap<T>(arr[0], arr[2]);
+					if (arr[1] > arr[2])
+						swap<T>(arr[1], arr[2]);
+
+				}
+
+				}
+				}
 
 #endif /* INC_BLDC_MOTOR_CONTROL_H_ */

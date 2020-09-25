@@ -90,30 +90,37 @@ public:
 	DiscreteSystemMIMO(size_t, real_t*, size_t, real_t*);
 };
 
-class StateBuffer: public Vector<real_t> {
+class VectorStates: public VectorReal {
 public:
-	StateBuffer(size_t length, real_t* data_ptr = NULL) :
-			Vector<real_t>(length, data_ptr) {
-
-	}
-	inline void shift() {
-		shift_idx++;
-		shift_idx %= get_length();
-	}
-	inline void sample(real_t value) {
-		Vector::at(shift_idx) = value;
+	using VectorReal::VectorReal;
+	inline void operator++() {
+		idx++;
+		idx %= get_length();
 	}
 	inline real_t& at(uint n) {
-		return Vector::at((n + shift_idx + 1) % get_length());
+		return Vector::at((n + idx + 1) % get_length());
+	}
+	inline real_t& at() {
+		return Vector::at(idx);
+	}
+	inline real_t at(uint n) const {
+		return Vector::at((n + idx + 1) % get_length());
+	}
+	inline real_t at() const {
+		return Vector::at(idx);
 	}
 	inline real_t& operator[](uint n) {
 		return at(n);
 	}
+
+	inline real_t operator[](uint n) const {
+		return at(n);
+	}
 	inline void reset() {
-		shift_idx = 0;
+		idx = 0;
 	}
 private:
-	uint shift_idx = 0;
+	uint idx = 0;
 };
 
 class DiscreteTransferFunction: public DiscreteSystemSISO, public TransferFunction {
@@ -124,14 +131,14 @@ public:
 	void states_set(real_t = 0, real_t = 0);
 private:
 
-	StateBuffer input_states;
-	StateBuffer output_states;
+	VectorStates input_states;
+	VectorStates output_states;
 
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
 
 };
 
-class DiscreteStateSpace: public StateSpace, public DiscreteSystemSISO {
+class DiscreteStateSpace: public  StateSpace, public DiscreteSystemSISO {
 
 public:
 	DiscreteStateSpace(size_t, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL);
@@ -184,9 +191,9 @@ private:
 	Vector<real_t> S_coeffs;
 	Vector<real_t> T_coeffs;
 
-	StateBuffer u_states;
-	StateBuffer y_states;
-	StateBuffer w_states;
+	VectorStates u_states;
+	VectorStates y_states;
+	VectorStates w_states;
 	real_t input_signals_data[2];
 	real_t output_signals_data[1];
 
@@ -204,7 +211,7 @@ public:
 	void states_set(real_t = 0);
 private:
 
-	StateBuffer states;
+	VectorStates states;
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
 	real_t modify_output(real_t y) {
 		return Saturation::modify_output(y);
@@ -221,7 +228,7 @@ public:
 private:
 
 	Vector<real_t> coeffs;
-	StateBuffer states;
+	VectorStates states;
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
 };
 
@@ -230,7 +237,7 @@ class DiscreteDelay: public DiscreteSystemSISO {
 public:
 	DiscreteDelay(size_t, real_t* = NULL);
 private:
-	StateBuffer states;
+	VectorStates states;
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
 
 };
@@ -274,7 +281,9 @@ private:
 class DiscreteTransferFunctionFirstOrder: public DiscreteTransferFunction {
 	using DiscreteTransferFunction::DiscreteTransferFunction;
 public:
-	DiscreteTransferFunctionFirstOrder():DiscreteTransferFunction(1, 1, numerator_coeffs_data, denominator_coeffs_data, input_states_data, output_states_data){}
+	DiscreteTransferFunctionFirstOrder() :
+			DiscreteTransferFunction(1, 1, numerator_coeffs_data, denominator_coeffs_data, input_states_data, output_states_data) {
+	}
 protected:
 	real_t input_states_data[2];
 	real_t output_states_data[2];
@@ -297,11 +306,10 @@ class DiscretePSDregulator: public DiscreteSystemSISO, public PID_regulator_para
 
 public:
 	DiscretePSDregulator(real_t, real_t, real_t);
-
-private:
-#define S_gain I_gain
 	DiscreteSumator sumator;
 	DiscreteDiference diference;
+private:
+#define S_gain I_gain
 
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
 };
@@ -329,10 +337,9 @@ class DiscretePIDregulator: public DiscreteSystemSISO, public PID_regulator_para
 
 public:
 	DiscretePIDregulator(real_t, real_t, real_t, real_t, real_t, approximation_method);
-
-private:
 	DiscreteIntegrator integrator;
 	DiscreteDerivative derivator;
+private:
 
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
 };
@@ -341,8 +348,8 @@ class DiscretePIregulator: public DiscreteSystemSISO, public PID_regulator_param
 
 public:
 	DiscretePIregulator(real_t, real_t, real_t, approximation_method);
-private:
 	DiscreteIntegrator integrator;
+private:
 
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
 };
@@ -351,14 +358,55 @@ class DiscreteIPregulator: public DiscreteSystemMIMO, public PID_regulator_param
 
 public:
 	DiscreteIPregulator(real_t, real_t, real_t, approximation_method);
-
-private:
 	DiscreteIntegrator integrator;
+private:
+
 	real_t input_signals_data[2];
 	real_t output_signals_data[1];
 
 	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
 };
+
+class DiscreteTransferFunctionRegressor {
+
+	DiscreteTransferFunctionRegressor(uint nb,uint na):u_states(nb),y_states(na)
+	{
+
+	}
+
+public:
+	void iterate(real_t u, real_t y)
+	{
+		u_states.at()=u;
+		++u_states;
+		y_states.at()=-y;
+		++y_states;
+	}
+	real_t& at(uint n) {
+		uint nb=u_states.get_length();
+		uint na=y_states.get_length();
+		if(n<nb)
+			return u_states[n];
+		else if(n<na+nb)
+			return y_states[n-nb];
+		else
+			throw exception_code(exception_INDEX_OUT_OF_RANGE);
+	}
+	real_t& operator[](uint n){
+		return at(n);
+	}
+	inline size_t get_length() const {
+		return u_states.get_length()+y_states.get_length();
+	}
+
+private:
+	VectorStates u_states;
+	VectorStates y_states;
+
+};
+
+void discrete_transfer_function_vector_h_update(VectorReal&, real_t, real_t, size_t, size_t);
+
 }
 
 #endif /* DISCRETE_SYSTEMS_H_ */

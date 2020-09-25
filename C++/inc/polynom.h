@@ -10,11 +10,11 @@ class Polynom: public VectorReal {
 #define DURAND_KERNER_DEFAULT_N_ITER 100 ///<polynomial root find default number of iterations
 #define DURAND_KERNER_DEFAULT_INITIAL_SPACE_SIZE 10.0 ///<polynomial root find default space size
 #define DURAND_KERNER_DEFAULT_TOLERANCE 0.0001 ///<polynomial root find default convergence tolerance
-
 	using VectorReal::VectorReal;
 
 public:
-	Polynom() {
+
+	Polynom():VectorReal() {
 	}
 	Polynom(const VectorComplex& roots) :
 			VectorReal(roots.get_length() + 1) {

@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <math.h>
+#include <iostream>
 #include <functional>
 #include <exception>
 
@@ -26,6 +27,12 @@
 #include "gsl/gsl_poly.h"
 #include "gsl/gsl_fit.h"
 #include "gsl/gsl_multifit.h"
+#endif
+
+#ifdef _MSC_VER
+#define M_PI 3.14159265358979323846
+#define M_SQRT3 1.732050807568877
+typedef unsigned int uint;
 #endif
 
 #define _FLOAT 1
@@ -110,22 +117,22 @@ public:
 
 	exception_code(int error) {
 		switch (error) {
-		case GSL_SUCCESS:
+			case GSL_SUCCESS:
 			value = exception_OK;
 			break;
-		case GSL_ENOMEM:
+			case GSL_ENOMEM:
 			value = exception_NULLPTR;
 			break;
-		case GSL_EFAULT:
+			case GSL_EFAULT:
 			value = exception_NULLPTR;
 			break;
-		case GSL_EBADLEN:
+			case GSL_EBADLEN:
 			value = exception_WRONG_DIMENSIONS;
 			break;
-		case GSL_ENOTSQR:
+			case GSL_ENOTSQR:
 			value = exception_WRONG_DIMENSIONS;
 			break;
-		default:
+			default:
 			value = exception_ERROR;
 			break;
 		}
@@ -133,15 +140,15 @@ public:
 
 	int to_gsl_error_code() const {
 		switch (value) {
-		case exception_OK:
+			case exception_OK:
 			return GSL_SUCCESS;
-		case exception_ERROR:
+			case exception_ERROR:
 			return GSL_FAILURE;
-		case exception_NULLPTR:
+			case exception_NULLPTR:
 			return GSL_EFAULT;
-		case exception_WRONG_DIMENSIONS:
+			case exception_WRONG_DIMENSIONS:
 			return GSL_EBADLEN;
-		default:
+			default:
 			return GSL_FAILURE;
 
 		}
@@ -189,12 +196,10 @@ typedef enum {
 #define POW2(X) ((X)*(X))  ///<second power of number/square
 #define POW3(X) ((X)*(X)*(X))///<third power of number/cube
 
-
-template <typename T> void swap(T& a,T& b)
-{
-	T tmp=a;
-	a=b;
-	b=tmp;
+template<typename T> void swap(T& a, T& b) {
+	T tmp = a;
+	a = b;
+	b = tmp;
 }
 
 namespace Operators {
@@ -245,6 +250,12 @@ inline real_t transform_linear(real_t x, real_t k, real_t q) {
 
 inline real_t quantize(real_t x, real_t step) {
 	return ((real_t) (int) (x / step)) * step;
+}
+
+inline real_t saturate(real_t x, real_t saturation_high, real_t saturation_low) {
+	x = CLIP_TOP(x, saturation_high);
+	x = CLIP_BOTTOM(x, saturation_low);
+	return x;
 }
 
 inline real_t mag2dB(real_t mag) {

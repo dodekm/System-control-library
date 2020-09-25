@@ -4,6 +4,7 @@
 #include "common_def.h"
 
 namespace SystemControl {
+
 template<typename T>
 class Vector {
 public:
@@ -15,8 +16,26 @@ public:
 	}
 	Vector(const Vector& vectorSrc, bool copy_data = true) :
 			Vector(vectorSrc.length) {
+		vectorSrc.assert();
 		if (copy_data)
 			load_data(vectorSrc.data_ptr);
+	}
+	Vector(const Vector& vectorSrc, size_t length, size_t offset) :
+			Vector(length, vectorSrc.data_ptr + offset) {
+		vectorSrc.assert();
+#ifdef ASSERT_DIMENSIONS
+		if (length + offset > vectorSrc.length)
+		throw exception_code(exception_WRONG_DIMENSIONS);
+#endif
+	}
+
+	Vector(Vector& vectorSrc, size_t length, size_t offset) throw (exception_code) :
+			Vector(length, vectorSrc.data_ptr + offset) {
+		vectorSrc.assert();
+#ifdef ASSERT_DIMENSIONS
+		if (length + offset > vectorSrc.length)
+		throw exception_code(exception_WRONG_DIMENSIONS);
+#endif
 	}
 	~Vector() {
 		deinit();
@@ -53,6 +72,18 @@ public:
 			init(length);
 		}
 
+	}
+
+	friend std::ostream& operator<<(std::ostream& out, const Vector& vec) {
+		vec.assert();
+		out << '[';
+		for (uint i = 0; i < vec.length; i++) {
+			out << vec[i];
+			if (i < vec.length - 1)
+				out << ",";
+		}
+		out << ']' << std::endl;
+		return out;
 	}
 	class iterator {
 	public:
@@ -124,8 +155,8 @@ public:
 	bool operator==(const Vector&) const throw (exception_code);
 	void load_data(const T*) throw (exception_code);
 	void set_all(T) throw (exception_code);
-	Vector subvector(size_t, size_t) throw (exception_code);
-	const Vector subvector(size_t, size_t) const throw (exception_code);
+	Vector subvector(size_t, size_t = 0) throw (exception_code);
+	const Vector subvector(size_t, size_t = 0) const throw (exception_code);
 
 	template<typename F>
 	void for_each(F) throw (exception_code);
@@ -178,11 +209,11 @@ template<typename T>
 void Vector<T>::assert() const throw (exception_code) {
 #ifdef ASSERT_NULLPTR
 	if (data_ptr == NULL)
-		throw exception_code(exception_NULLPTR);
+	throw exception_code(exception_NULLPTR);
 #endif
 #ifdef ASSERT_DIMENSIONS
 	if (length == 0)
-		throw exception_code(exception_WRONG_DIMENSIONS);
+	throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	if (allocation_info == allocation_type_unallocated)
 		throw exception_code(exception_ERROR);
@@ -193,7 +224,7 @@ template<typename T>
 void Vector<T>::init(size_t length, T* data_ptr) throw (exception_code) {
 #ifdef ASSERT_DIMENSIONS
 	if (length == 0)
-		throw exception_code(exception_WRONG_DIMENSIONS);
+	throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	if (allocation_info != allocation_type_unallocated)
 		throw exception_code(exception_ERROR);
@@ -229,13 +260,7 @@ void Vector<T>::deinit() {
 
 template<typename T>
 Vector<T> Vector<T>::subvector(size_t length, size_t offset) throw (exception_code) {
-	assert();
-#ifdef ASSERT_DIMENSIONS
-	if (length + offset > this->length)
-		throw exception_code(exception_WRONG_DIMENSIONS);
-#endif
-	return Vector<T>(length, data_ptr + offset);
-
+	return Vector(*this, length, offset);
 }
 
 template<typename T>
@@ -243,7 +268,7 @@ const Vector<T> Vector<T>::subvector(size_t length, size_t offset) const throw (
 	assert();
 #ifdef ASSERT_DIMENSIONS
 	if (length + offset > this->length)
-		throw exception_code(exception_WRONG_DIMENSIONS);
+	throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	return Vector<T>(length, data_ptr + offset);
 
@@ -259,7 +284,7 @@ void Vector<T>::load_data(const T* data_ptr) throw (exception_code) {
 	assert();
 #ifdef ASSERT_NULLPTR
 	if (data_ptr == NULL)
-		throw exception_code(exception_NULLPTR);
+	throw exception_code(exception_NULLPTR);
 #endif
 	memcpy(this->data_ptr, data_ptr, length * sizeof(T));
 
@@ -318,7 +343,7 @@ void Vector<T>::for_each(const Vector<T>& B, F lambda) throw (exception_code) {
 
 #ifdef ASSERT_DIMENSIONS
 	if (A.length != B.length)
-		throw exception_code(exception_WRONG_DIMENSIONS);
+	throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	for (uint i = 0; i < length; i++) {
 		if (!lambda(A.at(i), B.at(i), i))
@@ -344,7 +369,7 @@ void Vector<T>::for_each(const Vector<T>& A, const Vector<T>& B, F lambda) throw
 
 #ifdef ASSERT_DIMENSIONS
 	if (length != A.length || length != B.length)
-		throw exception_code(exception_WRONG_DIMENSIONS);
+	throw exception_code(exception_WRONG_DIMENSIONS);
 #endif
 	for (uint i = 0; i < length; i++) {
 		if (!lambda(A.at(i), B.at(i), this->at(i), i))

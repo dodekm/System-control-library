@@ -5,26 +5,31 @@
 #include "vector.h"
 #include "polynom.h"
 #include "matrix.h"
+#include "discrete_systems.h"
 
 namespace SystemControl {
 
-namespace SystemIdentification {
+void theta_vector_extract_num_den(const VectorReal&,VectorReal&,VectorReal&);
 
+namespace SystemIdentification {
 
 real_t linear_regression(const Matrix&, const VectorReal&, VectorReal&);
 real_t polynomial_fit(const VectorReal&, const VectorReal&, Polynom&, size_t);
 real_t estimate_discrete_transfer_function(const VectorReal&, const VectorReal&, Polynom&, Polynom&, size_t, size_t);
 
-
 class RecursiveLeastSquares {
 public:
 	RecursiveLeastSquares(size_t, real_t);
 
-	inline real_t get_error() {
+	inline real_t get_error()const {
 		return error;
 	}
-	inline const VectorReal& get_estimated_params() {
+	inline const VectorReal& get_theta()const {
 		return theta;
+	}
+
+	inline const Matrix& get_P()const {
+		return Pk_1;
 	}
 	inline void set_lambda(real_t lambda) {
 		this->lambda = lambda;
@@ -43,9 +48,10 @@ private:
 	real_t lambda = 1.0;
 	real_t error = 0;
 };
-void transfer_function_vector_h_iterate(VectorReal&, real_t, real_t, size_t, size_t);
+
 
 }
+
 
 }
 

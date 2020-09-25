@@ -6,15 +6,17 @@
 
 namespace SystemControl {
 
+
 class Matrix {
 public:
 
 	~Matrix();
 	Matrix() {
 	}
-	Matrix(size_t, size_t, real_t* = NULL,size_t=0) throw (exception_code);
+	Matrix(size_t, size_t, real_t* = NULL, size_t = 0) throw (exception_code);
 	Matrix(size_t, size_t, const real_t*) throw (exception_code);
 	Matrix(const Matrix&, bool = true) throw (exception_code);
+	Matrix(Matrix&,size_t, size_t, size_t, size_t) throw (exception_code);
 	void assert() const throw (exception_code);
 
 #ifdef USE_GSL
@@ -39,6 +41,7 @@ public:
 	inline real_t* ptr_at(uint row, uint col) {
 		return &at(row, col);
 	}
+
 
 	real_t& at_safe(uint row, uint col) throw (exception_code);
 	real_t at_safe(uint row, uint col) const throw (exception_code);
@@ -139,6 +142,7 @@ public:
 
 	bool operator==(const Matrix&) const throw (exception_code);
 
+
 	Matrix& unary_operation(const Matrix&, Operators::unary_operator<real_t>) throw (exception_code);
 	Matrix& binary_operation(const Matrix&, const Matrix&, Operators::binary_operator<real_t>) throw (exception_code);
 
@@ -155,8 +159,26 @@ public:
 	template<typename F>
 	void for_diagonal(const Matrix&, F) throw (exception_code);
 
+
+	friend std::ostream& operator<<(std::ostream &out, const Matrix & mat) {
+
+		mat.assert();
+		out << '[';
+		for (uint i = 0; i < mat.n_rows; i++) {
+			for (uint j = 0; j < mat.n_cols; j++) {
+				out << mat(i, j);
+				if (j != mat.n_cols-1)
+					out << ",";
+				else if(j == mat.n_cols-1 && i!=mat.n_rows-1)
+					out << ";" << std::endl;
+			}
+		}
+		out << ']' << std::endl;
+		return out;
+	}
+
 protected:
-	void init(size_t, size_t,size_t=0, real_t* = NULL) throw (exception_code);
+	void init(size_t, size_t, size_t = 0, real_t* = NULL) throw (exception_code);
 	void deinit();
 
 	size_t n_rows = 0;
@@ -181,10 +203,10 @@ private:
 class MatrixTranspose: public Matrix {
 public:
 	MatrixTranspose(Matrix& mat) :
-			Matrix(mat.n_cols, mat.n_rows, mat.data_ptr,mat.n_cols_mem) {
+			Matrix(mat.n_cols, mat.n_rows, mat.data_ptr, mat.n_cols_mem) {
 	}
 	MatrixTranspose(const Matrix& mat) :
-			Matrix(mat.n_cols, mat.n_rows, mat.data_ptr,mat.n_cols_mem) {
+			Matrix(mat.n_cols, mat.n_rows, mat.data_ptr, mat.n_cols_mem) {
 	}
 	inline real_t& at(uint row, uint col) {
 		return Matrix::at(col, row);
@@ -223,6 +245,8 @@ private:
 	Vector<uint> permutations;
 	static constexpr real_t tolerance = 1e-5;
 };
+
+
 
 }
 #endif /* MATRIX_CPP_H_ */

@@ -201,12 +201,14 @@ protected:
 
 class System1stOrderParams {
 public:
+	System1stOrderParams(real_t K=0,real_t T=0):K(K),T(T){}
 	real_t K;
 	real_t T;
 };
 
 class System2ndOrderParams {
 public:
+	 System2ndOrderParams(real_t K=0,real_t omega_0=0,real_t b=0):K(K),omega_0(omega_0),b(b){}
 	real_t K;
 	real_t omega_0;
 	real_t b;
@@ -214,6 +216,7 @@ public:
 
 class ReferencePolynom2ndOrder {
 public:
+	ReferencePolynom2ndOrder(real_t omega_0=0,real_t b=0):omega_0(omega_0),b(b){}
 	real_t omega_0;
 	real_t b;
 };
@@ -225,9 +228,10 @@ public:
 
 class PID_regulator_params {
 public:
-	real_t P_gain = 0;
-	real_t I_gain = 0;
-	real_t D_gain = 0;
+	PID_regulator_params(real_t P_gain = 0,real_t I_gain = 0,real_t D_gain = 0):P_gain(P_gain),I_gain(I_gain),D_gain(D_gain){}
+	real_t P_gain;
+	real_t I_gain;
+	real_t D_gain;
 	PID_regulator_params& get_params() {
 		return *this;
 	}
