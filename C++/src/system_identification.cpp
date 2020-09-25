@@ -2,6 +2,28 @@
 
 using namespace SystemControl;
 
+
+void theta_vector_extract_num_den(const VectorReal& theta, VectorReal& numerator, VectorReal& denominator) {
+	size_t nb = numerator.get_length() - 1;
+	size_t na = denominator.get_length() - 1;
+
+#ifdef ASSERT_DIMENSIONS
+	if (theta.get_length() != nb+na)
+	throw exception_WRONG_DIMENSIONS;
+#endif
+
+	numerator[nb] = 0;
+	denominator[na] = 1;
+
+	VectorReal numerator_subvector (numerator,nb, 0);
+	VectorReal denominator_subvector (denominator,na, 0);
+	const VectorReal theta_numerator (theta,nb, 0);
+	const VectorReal theta_denominator (theta,na, nb);
+	numerator_subvector = theta_numerator;
+	denominator_subvector = theta_denominator;
+
+}
+
 real_t SystemIdentification::linear_regression(const Matrix& H, const VectorReal& y_vector, VectorReal& theta) {
 
 	y_vector.assert();
@@ -10,9 +32,9 @@ real_t SystemIdentification::linear_regression(const Matrix& H, const VectorReal
 
 #ifdef ASSERT_DIMENSIONS
 	if (y_vector.get_length() != H.get_n_rows())
-		throw exception_WRONG_DIMENSIONS;
+	throw exception_WRONG_DIMENSIONS;
 	if (theta.get_length() != H.get_n_cols())
-		throw exception_WRONG_DIMENSIONS;
+	throw exception_WRONG_DIMENSIONS;
 #endif
 
 	size_t n_params = theta.get_length();
@@ -52,10 +74,10 @@ real_t SystemIdentification::linear_regression(const Matrix& H, const VectorReal
 #else
 
 	Matrix HTH(n_params, n_params);
-	const MatrixTranspose HT=MatrixTranspose(H);
-	const VectorReal HTy=HT.multiply(y_vector);
-	HTH.multiply(HT,H);
-	HTH.solve(HTy,theta);
+	const MatrixTranspose HT = MatrixTranspose(H);
+	const VectorReal HTy = HT.multiply(y_vector);
+	HTH.multiply(HT, H);
+	HTH.solve(HTy, theta);
 
 	return 0;
 #endif
@@ -69,9 +91,9 @@ real_t SystemIdentification::polynomial_fit(const VectorReal& x_vector, const Ve
 
 #ifdef ASSERT_DIMENSIONS
 	if (x_vector.get_length() != y_vector.get_length())
-		throw exception_WRONG_DIMENSIONS;
+	throw exception_WRONG_DIMENSIONS;
 	if (polynom.get_length() != degree + 1)
-		throw exception_WRONG_DIMENSIONS;
+	throw exception_WRONG_DIMENSIONS;
 #endif
 
 	size_t n_params = degree + 1;
@@ -107,11 +129,11 @@ real_t SystemIdentification::estimate_discrete_transfer_function(const VectorRea
 
 #ifdef ASSERT_DIMENSIONS
 	if (u_vector.get_length() != y_vector.get_length())
-		throw exception_WRONG_DIMENSIONS;
+	throw exception_WRONG_DIMENSIONS;
 	if (numerator.get_length() != nb + 1)
-		throw exception_WRONG_DIMENSIONS;
+	throw exception_WRONG_DIMENSIONS;
 	if (denominator.get_length() != na + 1)
-		throw exception_WRONG_DIMENSIONS;
+	throw exception_WRONG_DIMENSIONS;
 #endif
 
 	size_t n_params = nb + na;
@@ -135,18 +157,9 @@ real_t SystemIdentification::estimate_discrete_transfer_function(const VectorRea
 	}
 
 	VectorReal theta(n_params);
-
-	const VectorReal y_vector_cut = y_vector.subvector(n_observ - 1, 1);
+	const VectorReal y_vector_cut(y_vector,n_observ - 1, 1);
 	real_t chisq = linear_regression(X_mat, y_vector_cut, theta);
-	numerator[nb] = 0;
-	denominator[na] = 1;
-	Vector<real_t> numerator_subvector = numerator.subvector(nb, 0);
-	Vector<real_t> denominator_subvector = denominator.subvector(na, 0);
-	Vector<real_t> theta_numerator = theta.subvector(nb, 0);
-	Vector<real_t> theta_denominator = theta.subvector(na, nb);
-	numerator_subvector = theta_numerator;
-	denominator_subvector = theta_denominator;
-
+	::theta_vector_extract_num_den(theta,numerator,denominator);
 	return chisq;
 
 }
@@ -176,7 +189,7 @@ real_t SystemIdentification::RecursiveLeastSquares::estimate(const VectorReal& h
 	hk_1.assert();
 #ifdef  ASSERT_DIMENSIONS
 	if (hk_1.get_length() != theta.get_length())
-		throw exception_WRONG_DIMENSIONS;
+	throw exception_WRONG_DIMENSIONS;
 #endif
 #ifdef USE_GSL
 	const gsl_vector hk_1_gsl = hk_1.to_gsl_vector();
@@ -233,16 +246,15 @@ real_t SystemIdentification::RecursiveLeastSquares::estimate(const VectorReal& h
 	Pk_0 = Pk_1;
 	real_t y_estimated_k_1 = hk_1.dot_product(theta);
 	error = yk_1 - y_estimated_k_1;
-	Matrix Yk_1_col_mat = Matrix::VectorReal2colMatrix(Y);
 	Pk_0.multiply(hk_1, Y);
 	real_t rho = hk_1.dot_product(Y) + lambda;
 	Y.div(Y, rho);
-	const Matrix hk_1_row_mat = Matrix::VectorReal2rowMatrix(hk_1);
+	const Matrix hk_1_row_mat (Matrix::VectorReal2rowMatrix(hk_1));
+	Matrix Yk_1_col_mat (Matrix::VectorReal2colMatrix(Y));
 	YhT.multiply(Yk_1_col_mat, hk_1_row_mat);
-	Matrix YhT_diag = YhT.diagonal();
+	Matrix YhT_diag (YhT.diagonal());
 	YhT_diag.element_sub(YhT_diag, 1.0);
 	YhT.element_div(YhT, -lambda);
-
 	Pk_1.multiply(YhT, Pk_0);
 	Y.mul(Y, error);
 	theta.add(theta, Y);
@@ -263,39 +275,10 @@ real_t SystemIdentification::RecursiveLeastSquares::estimate_discrete_transfer_f
 
 #ifdef ASSERT_DIMENSIONS
 	if (hk_1.get_length() != n_params)
-		throw exception_WRONG_DIMENSIONS;
+	throw exception_WRONG_DIMENSIONS;
 #endif
 	real_t error = estimate(hk_1, yk_1);
-
-	numerator[nb] = 0;
-	denominator[na] = 1;
-	Vector<real_t> numerator_subvector = numerator.subvector(nb, 0);
-	Vector<real_t> denominator_subvector = denominator.subvector(na, 0);
-	Vector<real_t> theta_numerator = theta.subvector(nb, 0);
-	Vector<real_t> theta_denominator = theta.subvector(na, nb);
-	numerator_subvector = theta_numerator;
-	denominator_subvector = theta_denominator;
-
+	::theta_vector_extract_num_den(theta,numerator,denominator);
 	return error;
-}
-
-void SystemIdentification::transfer_function_vector_h_iterate(VectorReal& hk_1, real_t u_k1, real_t y_k1, size_t nb, size_t na) {
-	hk_1.assert();
-	size_t n_params = nb + na;
-#ifdef ASSERT_DIMENSIONS
-	if (hk_1.get_length() != n_params)
-		throw exception_WRONG_DIMENSIONS;
-#endif
-
-	for (uint i = 0; i < nb - 1; i++) {
-		hk_1[i] = hk_1[i + 1];
-	}
-	hk_1[nb - 1] = u_k1;
-
-	for (uint i = nb; i < nb + na - 1; i++) {
-		hk_1[i] = hk_1[i + 1];
-	}
-	hk_1[nb + na - 1] = -y_k1;
-
 }
 

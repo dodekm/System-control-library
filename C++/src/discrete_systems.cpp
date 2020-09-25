@@ -62,12 +62,12 @@ void DiscreteTransferFunction::step_function(const Vector<signal_realtime_T>& in
 	real_t* y_ptr = output_signals.at(0).ptr;
 
 	real_t y = 0;
-	input_states.sample(u);
+	input_states.at() = u;
 
 	for (uint i = 0; i < numerator_coeffs.get_length(); i++) {
 		y += numerator_coeffs[i] * input_states[i];
 	}
-	input_states.shift();
+	++input_states;
 
 	size_t order = get_order();
 	for (uint i = 0; i < order; i++) {
@@ -76,8 +76,8 @@ void DiscreteTransferFunction::step_function(const Vector<signal_realtime_T>& in
 	y /= denominator_coeffs[order];
 
 	y = modify_output(y);
-	output_states.sample(y);
-	output_states.shift();
+	output_states.at() = y;
+	++output_states;
 	*y_ptr = y;
 
 }
@@ -245,18 +245,18 @@ void Discrete_RST_Regulator::step_function(const Vector<signal_realtime_T>& inpu
 	const real_t y = *input_signals.at(1).ptr;
 	real_t* u_ptr = output_signals.at(0).ptr;
 
-	w_states.sample(w);
+	w_states.at() = w;
 	real_t u = 0;
 	for (uint i = 0; i < T_coeffs.get_length(); i++) {
 		u += T_coeffs[i] * w_states[i];
 	}
-	w_states.shift();
+	++w_states;
 
-	y_states.sample(y);
+	y_states.at() = y;
 	for (uint i = 0; i < S_coeffs.get_length(); i++) {
 		u += -S_coeffs[i] * y_states[i];
 	}
-	y_states.shift();
+	++y_states;
 
 	for (uint i = 0; i < R_coeffs.get_length() - 1; i++) {
 		u += -R_coeffs[i] * u_states[i];
@@ -264,8 +264,8 @@ void Discrete_RST_Regulator::step_function(const Vector<signal_realtime_T>& inpu
 	u /= R_coeffs[R_coeffs.get_length() - 1];
 
 	u = modify_output(u);
-	u_states.sample(u);
-	u_states.shift();
+	u_states.at() = u;
+	++u_states;
 	*u_ptr = u;
 }
 
@@ -316,13 +316,13 @@ void DiscreteIIRfilterDFII::step_function(const Vector<signal_realtime_T>& input
 		v += -denominator_coeffs[i] * states[i];
 	}
 	v /= denominator_coeffs[order];
-	states.sample(v);
+	states.at() = v;
 
 	real_t y = 0;
 	for (uint i = 0; i < order + 1; i++) {
 		y += numerator_coeffs[i] * states[i];
 	}
-	states.shift();
+	++states;
 	y = modify_output(y);
 	*y_ptr = y;
 
@@ -354,13 +354,13 @@ void DiscreteFIRfilter::step_function(const Vector<signal_realtime_T>& input_sig
 	const real_t u = *input_signals.at(0).ptr;
 	real_t* y_ptr = output_signals.at(0).ptr;
 
-	states.sample(u);
+	states.at() = u;
 	real_t y = 0;
 
 	for (uint i = 0; i < coeffs.get_length(); i++) {
 		y += coeffs[i] * states[i];
 	}
-	states.shift();
+	++states;
 	y = modify_output(y);
 	*y_ptr = y;
 
@@ -375,9 +375,9 @@ void DiscreteDelay::step_function(const Vector<signal_realtime_T>& input_signals
 
 	const real_t u = *input_signals.at(0).ptr;
 	real_t* y_ptr = output_signals.at(0).ptr;
-	states.sample(u);
+	states.at() = u;
 	real_t y = states[0];
-	states.shift();
+	++states;
 	*y_ptr = y;
 
 }
@@ -454,28 +454,19 @@ DiscreteSumator::DiscreteSumator(real_t initial_condition) :
 	numerator_coeffs_data[0] = 1.0;
 	denominator_coeffs_data[1] = 1.0;
 	denominator_coeffs_data[0] = -1.0;
-
-	real_t output_initial_states[] = { initial_condition, initial_condition };
-	states_set(NULL, output_initial_states);
+	states_set(0, initial_condition);
 }
 
 DiscreteDiference::DiscreteDiference(real_t initial_condition) :
 		DiscreteTransferFunctionFirstOrder(1, 0, numerator_coeffs_data, denominator_coeffs_data, input_states_data, output_states_data) {
-
 	numerator_coeffs_data[1] = 1.0;
 	numerator_coeffs_data[0] = -1.0;
 	denominator_coeffs_data[0] = 1.0;
-
-	real_t input_initial_states[] = { initial_condition, initial_condition };
-	states_set(input_initial_states, NULL);
+	states_set(initial_condition, 0);
 }
 
 DiscretePSDregulator::DiscretePSDregulator(real_t P_gain, real_t S_gain, real_t D_gain) :
-		sumator(0), diference(0) {
-	this->P_gain = P_gain;
-	this->S_gain = S_gain;
-	this->D_gain = D_gain;
-
+		PID_regulator_params(P_gain, S_gain, D_gain), sumator(0), diference(0) {
 }
 
 void DiscretePSDregulator::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
@@ -530,8 +521,7 @@ DiscreteIntegrator::DiscreteIntegrator(approximation_method method, real_t sampl
 		throw exception_ERROR;
 	}
 
-	real_t output_initial_states[] = { initial_condition, initial_condition };
-	states_set(NULL, output_initial_states);
+	states_set(0, initial_condition);
 
 }
 
@@ -561,16 +551,12 @@ DiscreteDerivative::DiscreteDerivative(approximation_method method, real_t sampl
 		throw exception_ERROR;
 
 	}
-	real_t input_initial_states[] = { initial_condition, initial_condition };
-	states_set(input_initial_states, NULL);
+	states_set(initial_condition, 0);
 
 }
 
 DiscretePIDregulator::DiscretePIDregulator(real_t sample_time, real_t P_gain, real_t I_gain, real_t D_gain, real_t N_gain, approximation_method method) :
-		integrator(method, sample_time), derivator(method, sample_time, N_gain) {
-	this->P_gain = P_gain;
-	this->I_gain = I_gain;
-	this->D_gain = D_gain;
+		PID_regulator_params(P_gain, I_gain, D_gain), integrator(method, sample_time), derivator(method, sample_time, N_gain) {
 }
 
 void DiscretePIDregulator::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
@@ -601,9 +587,7 @@ void DiscretePIDregulator::step_function(const Vector<signal_realtime_T>& input_
 	*u_ptr = u;
 }
 DiscretePIregulator::DiscretePIregulator(real_t sample_time, real_t P_gain, real_t I_gain, approximation_method method) :
-		integrator(method, sample_time) {
-	this->P_gain = P_gain;
-	this->I_gain = I_gain;
+		PID_regulator_params(P_gain, I_gain, 0), integrator(method, sample_time) {
 }
 
 void DiscretePIregulator::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
@@ -625,9 +609,7 @@ void DiscretePIregulator::step_function(const Vector<signal_realtime_T>& input_s
 }
 
 DiscreteIPregulator::DiscreteIPregulator(real_t sample_time, real_t P_gain, real_t I_gain, approximation_method method) :
-		DiscreteSystemMIMO(2, input_signals_data, 1, output_signals_data), integrator(method, sample_time) {
-	this->P_gain = P_gain;
-	this->I_gain = I_gain;
+		DiscreteSystemMIMO(2, input_signals_data, 1, output_signals_data), PID_regulator_params(P_gain, I_gain, 0), integrator(method, sample_time) {
 }
 
 void DiscreteIPregulator::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
@@ -651,3 +633,25 @@ void DiscreteIPregulator::step_function(const Vector<signal_realtime_T>& input_s
 	*u_ptr = u;
 }
 
+void SystemControl::discrete_transfer_function_vector_h_update(VectorReal& hk_1, real_t u_k1, real_t y_k1, size_t nb, size_t na) {
+	hk_1.assert();
+	size_t n_states = nb + na;
+#ifdef ASSERT_DIMENSIONS
+	if (hk_1.get_length() != n_states)
+	throw exception_WRONG_DIMENSIONS;
+#endif
+	if (nb) {
+		for (uint i = 0; i < nb - 1; i++) {
+			hk_1[i] = hk_1[i + 1];
+		}
+		hk_1[nb - 1] = u_k1;
+	}
+
+	if (na) {
+		for (uint i = nb; i < nb + na - 1; i++) {
+			hk_1[i] = hk_1[i + 1];
+		}
+
+		hk_1[nb + na - 1] = -y_k1;
+	}
+}
