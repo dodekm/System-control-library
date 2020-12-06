@@ -49,8 +49,8 @@ class ContinuousSystemSISO: public ContinuousSystem {
 public:
 	ContinuousSystemSISO(size_t, real_t*, real_t*);
 private:
-	real_t input;
-	real_t output;
+	real_t input_data;
+	real_t output_data;
 };
 
 class ContinuousSystemMIMO: public ContinuousSystem {
@@ -110,10 +110,10 @@ private:
 	void update_output_fcn(real_t, step_type);
 };
 
-class ContinuousPID_regulator: public ContinuousSystemSISO, public PID_regulator_params {
+class ContinuousPID_controller: public ContinuousSystemSISO, public PID_regulator_params {
 
 public:
-	ContinuousPID_regulator(real_t, real_t, real_t, real_t);
+	ContinuousPID_controller(real_t, real_t, real_t, real_t);
 
 private:
 	real_t N_gain;

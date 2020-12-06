@@ -11,16 +11,18 @@ public:
 
 	Vector() {
 	}
-	Vector(size_t length, T* data_ptr = NULL) {
+	explicit Vector(size_t length, T* data_ptr = NULL) {
 		init(length, data_ptr);
 	}
-	Vector(const Vector& vectorSrc, bool copy_data = true) :
+	explicit Vector(const Vector& vectorSrc, bool copy_data = true) :
 			Vector(vectorSrc.length) {
 		vectorSrc.assert();
-		if (copy_data)
-			load_data(vectorSrc.data_ptr);
+		if (copy_data) {
+			auto lambda = [](auto& A_i,auto B_i,auto i)->auto {A_i=B_i;return true;};
+			for_each(vectorSrc, lambda);
+		}
 	}
-	Vector(const Vector& vectorSrc, size_t length, size_t offset) :
+	Vector(const Vector& vectorSrc, size_t length, size_t offset) throw (exception_code) :
 			Vector(length, vectorSrc.data_ptr + offset) {
 		vectorSrc.assert();
 #ifdef ASSERT_DIMENSIONS
@@ -48,15 +50,17 @@ public:
 	virtual inline T& at(uint idx) {
 		return data_ptr[idx];
 	}
-	virtual inline T at(uint idx) const {
-		return data_ptr[idx];
+
+	inline T at(uint idx) const {
+		return const_cast<Vector<T>*>(this)->at(idx);
 	}
-	virtual inline T& operator[](uint idx) {
-		return data_ptr[idx];
+	inline T& operator[](uint idx) {
+		return at(idx);
 	}
-	virtual inline T operator[](uint idx) const {
-		return data_ptr[idx];
+	inline T operator[](uint idx) const {
+		return at(idx);
 	}
+
 	T& at_safe(uint) throw (exception_code);
 	T at_safe(uint) const throw (exception_code);
 
@@ -152,6 +156,7 @@ public:
 
 	Vector& operator=(const Vector&) throw (exception_code);
 	Vector& operator=(T) throw (exception_code);
+
 	bool operator==(const Vector&) const throw (exception_code);
 	void load_data(const T*) throw (exception_code);
 	void set_all(T) throw (exception_code);
@@ -265,13 +270,7 @@ Vector<T> Vector<T>::subvector(size_t length, size_t offset) throw (exception_co
 
 template<typename T>
 const Vector<T> Vector<T>::subvector(size_t length, size_t offset) const throw (exception_code) {
-	assert();
-#ifdef ASSERT_DIMENSIONS
-	if (length + offset > this->length)
-	throw exception_code(exception_WRONG_DIMENSIONS);
-#endif
-	return Vector<T>(length, data_ptr + offset);
-
+	return Vector(*this, length, offset);
 }
 
 template<typename T>
@@ -286,7 +285,8 @@ void Vector<T>::load_data(const T* data_ptr) throw (exception_code) {
 	if (data_ptr == NULL)
 	throw exception_code(exception_NULLPTR);
 #endif
-	memcpy(this->data_ptr, data_ptr, length * sizeof(T));
+	auto lambda = [data_ptr](auto& A_i,auto i)->auto {A_i=data_ptr[i];return true;};
+	for_each(lambda);
 
 }
 
@@ -297,7 +297,9 @@ Vector<T>& Vector<T>::operator=(const Vector& vectorSrc) throw (exception_code) 
 		deinit();
 		init(vectorSrc.length);
 	}
-	load_data(vectorSrc.data_ptr);
+	auto lambda = [](auto& A_i,auto B_i,auto i)->auto {A_i=B_i;return true;};
+	for_each(vectorSrc, lambda);
+
 	return *this;
 }
 template<typename T>
@@ -329,8 +331,11 @@ template<typename T>
 template<typename F>
 void Vector<T>::for_each(F lambda) const throw (exception_code) {
 
-	Vector<T>& A = const_cast<Vector<T>&>(*this);
-	A.for_each(lambda);
+	assert();
+	for (uint i = 0; i < length; i++) {
+		if (!lambda(at(i), i))
+			break;
+	}
 }
 
 template<typename T>
@@ -355,8 +360,18 @@ void Vector<T>::for_each(const Vector<T>& B, F lambda) throw (exception_code) {
 template<typename T>
 template<typename F>
 void Vector<T>::for_each(const Vector<T>& B, F lambda) const throw (exception_code) {
-	Vector<T>& A = const_cast<Vector<T>&>(*this);
-	A.for_each(B, lambda);
+	const Vector<T>& A = *this;
+	A.assert();
+	B.assert();
+
+#ifdef ASSERT_DIMENSIONS
+	if (A.length != B.length)
+	throw exception_code(exception_WRONG_DIMENSIONS);
+#endif
+	for (uint i = 0; i < length; i++) {
+		if (!lambda(A.at(i), B.at(i), i))
+			break;
+	}
 }
 
 template<typename T>

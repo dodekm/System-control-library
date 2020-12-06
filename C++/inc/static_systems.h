@@ -10,7 +10,7 @@ class StaticSystem: public System {
 public:
 	StaticSystem(size_t, real_t*, size_t, real_t*);
 
-	inline void eval(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+	inline void eval(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 		return eval_function(input_signals, output_signals);
 	}
 	inline void eval() {
@@ -23,7 +23,7 @@ public:
 	}
 
 protected:
-	virtual void eval_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&)=0;
+	virtual void eval_function(const Vector<Signal>&, Vector<Signal>&)=0;
 };
 
 class StaticSystemSISO: public StaticSystem {
@@ -31,8 +31,8 @@ public:
 	StaticSystemSISO();
 
 private:
-	real_t input;
-	real_t output;
+	real_t input_data;
+	real_t output_data;
 };
 
 class StaticSystemMIMO: public StaticSystem {
@@ -53,7 +53,7 @@ private:
 	real_t lower_limit;
 	real_t upper_limit;
 
-	void eval_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void eval_function(const Vector<Signal>&, Vector<Signal>&);
 };
 
 class StaticSystemDeadzone: public StaticSystemSISO {
@@ -68,7 +68,7 @@ public:
 private:
 	real_t treshold_low;
 	real_t treshold_high;
-	void eval_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void eval_function(const Vector<Signal>&, Vector<Signal>&);
 };
 
 class StaticSystemGain: public StaticSystemSISO {
@@ -81,7 +81,7 @@ public:
 
 private:
 	real_t gain;
-	void eval_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void eval_function(const Vector<Signal>&, Vector<Signal>&);
 };
 
 class StaticSystemQuantize: public StaticSystemSISO {
@@ -94,7 +94,7 @@ public:
 
 private:
 	real_t step_size;
-	void eval_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void eval_function(const Vector<Signal>&, Vector<Signal>&);
 };
 
 class StaticSystemRelay: public StaticSystemSISO {
@@ -115,7 +115,7 @@ private:
 	real_t value_on;
 	real_t value_off;
 	real_t y_last;
-	void eval_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void eval_function(const Vector<Signal>&, Vector<Signal>&);
 };
 
 class StaticSystem2ISO: public StaticSystemMIMO {
@@ -133,21 +133,21 @@ private:
 class StaticSystemSum: public StaticSystem2ISO {
 	using StaticSystem2ISO::StaticSystem2ISO;
 private:
-	void eval_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void eval_function(const Vector<Signal>&, Vector<Signal>&);
 
 };
 
 class StaticSystemSub: public StaticSystem2ISO {
 	using StaticSystem2ISO::StaticSystem2ISO;
 private:
-	void eval_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void eval_function(const Vector<Signal>&, Vector<Signal>&);
 
 };
 
 class StaticSystemProduct: public StaticSystem2ISO {
 	using StaticSystem2ISO::StaticSystem2ISO;
 private:
-	void eval_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void eval_function(const Vector<Signal>&, Vector<Signal>&);
 
 };
 
@@ -170,7 +170,7 @@ public:
 private:
 	real_t output;
 	Vector<Operators::binary_operator<real_t>> operators;
-	void eval_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void eval_function(const Vector<Signal>&, Vector<Signal>&);
 
 };
 

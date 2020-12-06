@@ -12,10 +12,11 @@ class VectorNumeric: public Vector<T> {
 
 public:
 	using Vector<T>::Vector;
+
 	VectorNumeric() {
 	}
 
-	VectorNumeric(Vector<T>& vectorSrc) :
+	 VectorNumeric(Vector<T>& vectorSrc) :
 			Vector<T>(vectorSrc) {
 	}
 	VectorNumeric(const Vector<T>& vectorSrc) :
@@ -25,7 +26,7 @@ public:
 	void convolute(const VectorNumeric&, const VectorNumeric&);
 	VectorNumeric convolute(const VectorNumeric&) const;
 	void convolute_symetric_kernel(const VectorNumeric&, const VectorNumeric&);
-	VectorNumeric convolute_symetric_kernel(const VectorNumeric&) const;
+	
 
 	void filtrate(const VectorNumeric&, const VectorNumeric&);
 	void filtrate_symetric_kernel(const VectorNumeric&, const VectorNumeric&);
@@ -50,18 +51,23 @@ public:
 	void div(const VectorNumeric&, T);
 	void multiply_by_scalar_and_accumulate(const VectorNumeric&, T);
 
-	inline VectorNumeric operator+(const VectorNumeric& B) const {
-		const VectorNumeric& A = *this;
-		VectorNumeric C(this->length);
-		C.add(A, B);
-		return C;
-	}
-	inline VectorNumeric operator-(const VectorNumeric& B) const {
-		const VectorNumeric& A = *this;
-		VectorNumeric C(this->length);
-		C.sub(A, B);
-		return C;
-	}
+
+	VectorNumeric operator+(const VectorNumeric& B) const;
+	VectorNumeric operator+(T B) const;
+	VectorNumeric& operator+=(const VectorNumeric& B);
+	VectorNumeric& operator+=(T B);
+	VectorNumeric operator-(const VectorNumeric& B) const;
+	VectorNumeric operator-(T B) const;
+	VectorNumeric& operator-=(const VectorNumeric& B);
+	VectorNumeric& operator-=(T B);
+	VectorNumeric operator*(const VectorNumeric& B) const;
+	VectorNumeric operator*(T B) const;
+	VectorNumeric& operator*=(const VectorNumeric& B);
+	VectorNumeric& operator*=(T B);
+	VectorNumeric operator/(const VectorNumeric& B) const;
+	VectorNumeric operator/(T B) const;
+	VectorNumeric& operator/=(const VectorNumeric& B);
+	VectorNumeric& operator/=(T B);
 
 private:
 
@@ -200,6 +206,113 @@ void VectorNumeric<T>::multiply_by_scalar_and_accumulate(const VectorNumeric& vS
 	VectorNumeric& vDst = *this;
 	auto lambda = [scalar_value](auto& Dst_i,auto Src_i,auto i)->auto {Dst_i+=(Src_i*scalar_value);return true;};
 	vDst.for_each(vSrc, lambda);
+}
+template<typename T>
+VectorNumeric<T> VectorNumeric<T>::operator+(const VectorNumeric& B) const {
+	const VectorNumeric& A = *this;
+	VectorNumeric C(this->length);
+	C.add(A, B);
+	return C;
+}
+template<typename T>
+VectorNumeric<T> VectorNumeric<T>::operator+(T B) const {
+	const VectorNumeric& A = *this;
+	VectorNumeric C(this->length);
+	C.add(A, B);
+	return C;
+}
+template<typename T>
+VectorNumeric<T>& VectorNumeric<T>::operator+=(const VectorNumeric& B) {
+	VectorNumeric& A = *this;
+	A.add(A, B);
+	return *this;
+}
+template<typename T>
+VectorNumeric<T>& VectorNumeric<T>::operator+=(T B) {
+	VectorNumeric& A = *this;
+	A.add(A, B);
+	return *this;
+}
+template<typename T>
+VectorNumeric<T> VectorNumeric<T>::operator-(const VectorNumeric& B) const {
+	const VectorNumeric& A = *this;
+	VectorNumeric C(this->length);
+	C.sub(A, B);
+	return C;
+}
+template<typename T>
+VectorNumeric<T> VectorNumeric<T>::operator-(T B) const {
+	const VectorNumeric& A = *this;
+	VectorNumeric C(this->length);
+	C.sub(A, B);
+	return C;
+}
+template<typename T>
+VectorNumeric<T>& VectorNumeric<T>::operator-=(const VectorNumeric& B) {
+	VectorNumeric& A = *this;
+	A.sub(A, B);
+	return *this;
+}
+
+template<typename T>
+VectorNumeric<T>& VectorNumeric<T>::operator-=(T B) {
+	VectorNumeric& A = *this;
+	A.sub(A, B);
+	return *this;
+}
+template<typename T>
+VectorNumeric<T> VectorNumeric<T>::operator*(const VectorNumeric& B) const {
+	const VectorNumeric& A = *this;
+	VectorNumeric C(this->length);
+	C.mul(A, B);
+	return C;
+}
+template<typename T>
+VectorNumeric<T> VectorNumeric<T>::operator*(T B) const {
+	const VectorNumeric& A = *this;
+	VectorNumeric C(this->length);
+	C.mul(A, B);
+	return C;
+}
+template<typename T>
+VectorNumeric<T>& VectorNumeric<T>::operator*=(const VectorNumeric& B) {
+	VectorNumeric& A = *this;
+	A.mul(A, B);
+	return *this;
+}
+
+template<typename T>
+VectorNumeric<T>& VectorNumeric<T>::operator*=(T B) {
+	VectorNumeric& A = *this;
+	A.mul(A, B);
+	return *this;
+}
+template<typename T>
+VectorNumeric<T> VectorNumeric<T>::operator/(const VectorNumeric& B) const {
+	const VectorNumeric& A = *this;
+	VectorNumeric C(this->length);
+	C.div(A, B);
+	return C;
+}
+template<typename T>
+VectorNumeric<T> VectorNumeric<T>::operator/(T B) const {
+	const VectorNumeric& A = *this;
+	VectorNumeric C(this->length);
+	C.div(A, B);
+	return C;
+}
+
+template<typename T>
+VectorNumeric<T>& VectorNumeric<T>::operator/=(const VectorNumeric& B) {
+	VectorNumeric& A = *this;
+	A.div(A, B);
+	return *this;
+}
+template<typename T>
+VectorNumeric<T>& VectorNumeric<T>::operator/=(T B) {
+	VectorNumeric& A = *this;
+	A.div(A, B);
+	return *this;
 }
 
 template<typename T>
@@ -381,6 +494,18 @@ public:
 private:
 
 };
+
+class VectorRealReverse: public VectorReal {
+
+public:
+	using VectorReal::VectorReal;
+
+	inline real_t& at(uint idx) {
+		return Vector::at(length - 1 - idx);
+	}
+
+};
+
 class VectorComplex: public VectorNumeric<Complex> {
 
 public:

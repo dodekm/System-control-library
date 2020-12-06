@@ -9,17 +9,15 @@
 
 namespace SystemControl {
 
-void theta_vector_extract_num_den(const VectorReal&,VectorReal&,VectorReal&);
-
 namespace SystemIdentification {
 
 real_t linear_regression(const Matrix&, const VectorReal&, VectorReal&);
 real_t polynomial_fit(const VectorReal&, const VectorReal&, Polynom&, size_t);
-real_t estimate_discrete_transfer_function(const VectorReal&, const VectorReal&, Polynom&, Polynom&, size_t, size_t);
+real_t estimate_discrete_transfer_function(const VectorReal&, const VectorReal&, VectorReal&, VectorReal&, size_t, size_t,real_t=0,real_t=0);
 
 class RecursiveLeastSquares {
 public:
-	RecursiveLeastSquares(size_t, real_t);
+	RecursiveLeastSquares(size_t, real_t=1e10);
 
 	inline real_t get_error()const {
 		return error;
@@ -37,7 +35,6 @@ public:
 
 	void reset(real_t);
 	real_t estimate(const VectorReal&, real_t);
-	real_t estimate_discrete_transfer_function(const VectorReal&, real_t, Polynom&, Polynom&);
 
 private:
 	Matrix Pk_0;

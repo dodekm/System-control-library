@@ -6,7 +6,6 @@
 
 namespace SystemControl {
 
-
 class Matrix {
 public:
 
@@ -16,7 +15,7 @@ public:
 	Matrix(size_t, size_t, real_t* = NULL, size_t = 0) throw (exception_code);
 	Matrix(size_t, size_t, const real_t*) throw (exception_code);
 	Matrix(const Matrix&, bool = true) throw (exception_code);
-	Matrix(Matrix&,size_t, size_t, size_t, size_t) throw (exception_code);
+	Matrix(Matrix&, size_t, size_t, size_t, size_t) throw (exception_code);
 	void assert() const throw (exception_code);
 
 #ifdef USE_GSL
@@ -34,14 +33,13 @@ public:
 	virtual inline real_t& at(uint row, uint col) {
 		return data_ptr[col + row * n_cols_mem];
 	}
-	virtual inline real_t at(uint row, uint col) const {
-		return data_ptr[col + row * n_cols_mem];
+	inline real_t at(uint row, uint col) const {
+		return const_cast<Matrix*>(this)->at(row, col);
 	}
 
 	inline real_t* ptr_at(uint row, uint col) {
 		return &at(row, col);
 	}
-
 
 	real_t& at_safe(uint row, uint col) throw (exception_code);
 	real_t at_safe(uint row, uint col) const throw (exception_code);
@@ -98,10 +96,11 @@ public:
 	void set_identity() throw (exception_code);
 	void load_data(const real_t*) throw (exception_code);
 
-	Matrix& multiply(const Matrix&, const Matrix&) throw (exception_code);
+	Matrix& multiply(const Matrix&, const Matrix&, int = 0) throw (exception_code);
 	Matrix multiply(const Matrix&) const throw (exception_code);
-	VectorReal& multiply(const VectorReal&, VectorReal&) const throw (exception_code);
+	VectorReal& multiply(const VectorReal&, VectorReal&, int = 0) const throw (exception_code);
 	VectorReal multiply(const VectorReal&) const throw (exception_code);
+	Matrix& multiplyTvector(const VectorReal&, const VectorReal&) throw (exception_code);
 
 	Matrix transpose() const throw (exception_code);
 	Matrix& exp(const Matrix&, uint = 10) throw (exception_code);
@@ -142,7 +141,6 @@ public:
 
 	bool operator==(const Matrix&) const throw (exception_code);
 
-
 	Matrix& unary_operation(const Matrix&, Operators::unary_operator<real_t>) throw (exception_code);
 	Matrix& binary_operation(const Matrix&, const Matrix&, Operators::binary_operator<real_t>) throw (exception_code);
 
@@ -159,7 +157,6 @@ public:
 	template<typename F>
 	void for_diagonal(const Matrix&, F) throw (exception_code);
 
-
 	friend std::ostream& operator<<(std::ostream &out, const Matrix & mat) {
 
 		mat.assert();
@@ -167,9 +164,9 @@ public:
 		for (uint i = 0; i < mat.n_rows; i++) {
 			for (uint j = 0; j < mat.n_cols; j++) {
 				out << mat(i, j);
-				if (j != mat.n_cols-1)
+				if (j != mat.n_cols - 1)
 					out << ",";
-				else if(j == mat.n_cols-1 && i!=mat.n_rows-1)
+				else if (j == mat.n_cols - 1 && i != mat.n_rows - 1)
 					out << ";" << std::endl;
 			}
 		}
@@ -211,9 +208,6 @@ public:
 	inline real_t& at(uint row, uint col) {
 		return Matrix::at(col, row);
 	}
-	inline real_t at(uint row, uint col) const {
-		return Matrix::at(col, row);
-	}
 
 };
 
@@ -228,25 +222,25 @@ public:
 	inline real_t& at(uint row, uint col) {
 		return Matrix::at(permutations[row], col);
 	}
-	inline real_t at(uint row, uint col) const {
-		return Matrix::at(permutations[row], col);
-	}
+
 	void swap_rows(uint i, uint j) {
 		uint tmp = permutations[i];
 		permutations[i] = permutations[j];
 		permutations[j] = tmp;
+		s*=-1;
 	}
 	VectorReal& LU_solve(const VectorReal&, VectorReal&);
-
-private:
 	VectorReal& LU_subs(const VectorReal&, VectorReal&) const;
 	MatrixPermRow& LU_decompose();
+	real_t LU_det() const;
+	void LU_inv(Matrix&) const;
+
+private:
 
 	Vector<uint> permutations;
+	int s=1;
 	static constexpr real_t tolerance = 1e-5;
 };
-
-
 
 }
 #endif /* MATRIX_CPP_H_ */

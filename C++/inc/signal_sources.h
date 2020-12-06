@@ -10,7 +10,7 @@ class SignalSource: public System {
 public:
 	SignalSource();
 
-	void eval(real_t time, Vector<signal_realtime_T>& output_signals) {
+	void eval(real_t time, Vector<Signal>& output_signals) {
 		eval_function(time, output_signals);
 	}
 	void eval(real_t time) {
@@ -23,7 +23,7 @@ public:
 	}
 
 private:
-	virtual void eval_function(real_t, Vector<signal_realtime_T>&)=0;
+	virtual void eval_function(real_t, Vector<Signal>&)=0;
 	real_t output;
 };
 
@@ -36,7 +36,7 @@ private:
 	real_t period;
 	real_t amplitude;
 	real_t offset;
-	void eval_function(real_t , Vector<signal_realtime_T>&);
+	void eval_function(real_t , Vector<Signal>&);
 };
 
 class SignalSourceStep: public SignalSource {
@@ -49,7 +49,7 @@ private:
 	real_t step_time;
 	real_t initial_state;
 	real_t final_state;
-	void eval_function(real_t, Vector<signal_realtime_T>& );
+	void eval_function(real_t, Vector<Signal>& );
 };
 
 
@@ -59,9 +59,9 @@ public:
 	using SignalTimeseries::SignalTimeseries;
 private:
 
-	void eval_function(real_t time, Vector<signal_realtime_T>& output_signals)
+	void eval_function(real_t time, Vector<Signal>& output_signals)
 	{
-		*output_signals[0].ptr=read(time);
+		output_signals[0]=read(time);
 	}
 };
 
@@ -71,9 +71,9 @@ public:
 	using SignalSampled::SignalSampled;
 private:
 
-	void eval_function(real_t time, Vector<signal_realtime_T>& output_signals)
+	void eval_function(real_t time, Vector<Signal>& output_signals)
 	{
-		*output_signals[0].ptr=at(time);
+		output_signals[0]=at(time);
 	}
 };
 

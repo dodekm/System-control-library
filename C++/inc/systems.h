@@ -10,20 +10,48 @@
 
 namespace SystemControl {
 
-typedef struct signal_realtime {
-	real_t* ptr;
-	class System* owner;
-} signal_realtime_T;
+class Signal {
 
-/**
- * Common control loop signals structure.
- */
-typedef struct {
-	uint64_t tick; ///<sample counter
-	real_t w; ///<control setpoint
-	real_t y; ///<system output
-	real_t u; ///<control output
-} control_loop_signals_T;
+public:
+	Signal() {
+	}
+	Signal(real_t* ptr, class System* owner = NULL) :
+			owner(owner), ptr(ptr) {
+	}
+	Signal(const Signal& other) :
+			Signal(other.ptr, other.owner) {
+	}
+	Signal& operator=(const Signal& other)
+	{
+		owner=other.owner;
+		ptr=other.ptr;
+		return *this;
+	}
+	real_t& operator=(real_t value) {
+		*ptr = value;
+		return *ptr;
+	}
+	operator real_t() const {
+		return *ptr;
+	}
+	operator real_t&() {
+		return *ptr;
+	}
+	operator real_t*() {
+		return ptr;
+	}
+	operator const real_t*() const {
+		return ptr;
+	}
+
+	bool operator==(const Signal& other)const {
+		return this->owner == other.owner && this->ptr == other.ptr;
+	}
+
+	class System* owner = NULL;
+private:
+	real_t* ptr = NULL;
+};
 
 class System {
 
@@ -32,23 +60,23 @@ class System {
 
 public:
 
-	inline signal_realtime_T& input_port_struct(uint idx) {
+	inline Signal& input_port_struct(uint idx) {
 		return input_port.at(idx);
 	}
-	inline signal_realtime_T& output_port_struct(uint idx) {
+	inline Signal& output_port_struct(uint idx) {
 		return output_port.at(idx);
 	}
-	inline real_t& input_port_real_value(uint idx) {
-		return *input_port.at(idx).ptr;
+	inline real_t& input(uint idx) {
+		return input_port.at(idx);
 	}
-	inline real_t& output_port_real_value(uint idx) {
-		return *output_port.at(idx).ptr;
+	inline real_t& output(uint idx) {
+		return output_port.at(idx);
 	}
-	inline real_t input_port_real_value(uint idx)const {
-		return *input_port.at(idx).ptr;
+	inline real_t input(uint idx) const {
+		return input_port.at(idx);
 	}
-	inline real_t output_port_real_value(uint idx)const {
-		return *output_port.at(idx).ptr;
+	inline real_t output(uint idx) const {
+		return output_port.at(idx);
 	}
 
 	inline size_t input_port_size() const {
@@ -68,8 +96,8 @@ public:
 	} system_time_domain;
 
 protected:
-	Vector<signal_realtime_T> input_port;
-	Vector<signal_realtime_T> output_port;
+	Vector<Signal> input_port;
+	Vector<Signal> output_port;
 
 	system_type type = system_type_uninitialized;
 	system_time_domain time_domain = system_time_domain_uninitialized;
@@ -201,14 +229,18 @@ protected:
 
 class System1stOrderParams {
 public:
-	System1stOrderParams(real_t K=0,real_t T=0):K(K),T(T){}
+	System1stOrderParams(real_t K = 0, real_t T = 0) :
+			K(K), T(T) {
+	}
 	real_t K;
 	real_t T;
 };
 
 class System2ndOrderParams {
 public:
-	 System2ndOrderParams(real_t K=0,real_t omega_0=0,real_t b=0):K(K),omega_0(omega_0),b(b){}
+	System2ndOrderParams(real_t K = 0, real_t omega_0 = 0, real_t b = 0) :
+			K(K), omega_0(omega_0), b(b) {
+	}
 	real_t K;
 	real_t omega_0;
 	real_t b;
@@ -216,7 +248,9 @@ public:
 
 class ReferencePolynom2ndOrder {
 public:
-	ReferencePolynom2ndOrder(real_t omega_0=0,real_t b=0):omega_0(omega_0),b(b){}
+	ReferencePolynom2ndOrder(real_t omega_0 = 0, real_t b = 0) :
+			omega_0(omega_0), b(b) {
+	}
 	real_t omega_0;
 	real_t b;
 };
@@ -228,10 +262,18 @@ public:
 
 class PID_regulator_params {
 public:
-	PID_regulator_params(real_t P_gain = 0,real_t I_gain = 0,real_t D_gain = 0):P_gain(P_gain),I_gain(I_gain),D_gain(D_gain){}
-	real_t P_gain;
-	real_t I_gain;
-	real_t D_gain;
+	PID_regulator_params(real_t P_gain = 0, real_t I_gain = 0, real_t D_gain = 0) :
+			P_gain(P_gain), I_gain(I_gain), D_gain(D_gain) {
+	}
+
+	union {
+		struct {
+			real_t P_gain;
+			real_t I_gain;
+			real_t D_gain;
+		};
+		real_t data[3];
+	};
 	PID_regulator_params& get_params() {
 		return *this;
 	}

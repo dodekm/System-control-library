@@ -19,7 +19,7 @@ void convolution_matrix(const VectorReal&, Matrix&, uint);
 Matrix convolution_matrix(const VectorReal&, uint);
 
 
-void RST_poleplace(const Polynom&, const Polynom&, const Polynom&, Polynom&, Polynom&, Polynom&);
+void RST_poleplace(const VectorReal&, const VectorReal&, const VectorReal&, VectorReal&, VectorReal&, VectorReal&);
 void PI_poleplace(const System1stOrderParams&, const ReferencePolynom2ndOrder&, PID_regulator_params&);
 void PIV_poleplace(const System1stOrderParams&, const ReferencePolynom3rdOrder&, PID_regulator_params&, PID_regulator_params&);
 

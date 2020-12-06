@@ -11,7 +11,7 @@ public:
 	void set_saturation(real_t saturation_high, real_t saturation_low) {
 		if (saturation_high < saturation_low)
 			throw exception_ERROR;
-		if (saturation_high == 0.0 || saturation_low == 0.0)
+		if (saturation_high == saturation_low)
 			throw exception_ERROR;
 		this->saturation_high = saturation_high;
 		this->saturation_low = saturation_low;
@@ -58,20 +58,22 @@ public:
 
 	DiscreteSystem(size_t, real_t*, size_t, real_t*);
 
-	inline void step(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+	inline void step(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 		return step_function(input_signals, output_signals);
 	}
 	inline void step() {
 		return step_function(input_port, output_port);
 	}
 	real_t step(real_t);
+	real_t step(real_t, real_t);
+
 	inline void update(real_t time, step_type step_type) {
 		if (step_type == step_major)
 			step();
 	}
 
 protected:
-	virtual void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&)=0;
+	virtual void step_function(const Vector<Signal>&, Vector<Signal>&)=0;
 	virtual real_t modify_output(real_t y) {
 		return y;
 	}
@@ -81,8 +83,8 @@ class DiscreteSystemSISO: public DiscreteSystem {
 public:
 	DiscreteSystemSISO();
 private:
-	real_t input;
-	real_t output;
+	real_t input_data;
+	real_t output_data;
 
 };
 class DiscreteSystemMIMO: public DiscreteSystem {
@@ -93,34 +95,35 @@ public:
 class VectorStates: public VectorReal {
 public:
 	using VectorReal::VectorReal;
+
+	VectorStates(const VectorStates& other) :
+			VectorReal(other), idx(other.idx) {
+	}
+
+	VectorStates& operator=(const VectorStates& vectorSrc) throw (exception_code) {
+		idx = vectorSrc.idx;
+		(VectorReal &) *this = (const VectorReal&) vectorSrc;
+		return *this;
+	}
+
 	inline void operator++() {
 		idx++;
 		idx %= get_length();
 	}
 	inline real_t& at(uint n) {
-		return Vector::at((n + idx + 1) % get_length());
+		return Vector::at((n + idx + 1) % length);
 	}
 	inline real_t& at() {
 		return Vector::at(idx);
 	}
-	inline real_t at(uint n) const {
-		return Vector::at((n + idx + 1) % get_length());
-	}
 	inline real_t at() const {
 		return Vector::at(idx);
 	}
-	inline real_t& operator[](uint n) {
-		return at(n);
-	}
-
-	inline real_t operator[](uint n) const {
-		return at(n);
-	}
 	inline void reset() {
-		idx = 0;
+		idx = length - 1;
 	}
 private:
-	uint idx = 0;
+	uint idx = length - 1;
 };
 
 class DiscreteTransferFunction: public DiscreteSystemSISO, public TransferFunction {
@@ -134,11 +137,11 @@ private:
 	VectorStates input_states;
 	VectorStates output_states;
 
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 
 };
 
-class DiscreteStateSpace: public  StateSpace, public DiscreteSystemSISO {
+class DiscreteStateSpace: public StateSpace, public DiscreteSystemSISO {
 
 public:
 	DiscreteStateSpace(size_t, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL);
@@ -149,7 +152,7 @@ private:
 	VectorReal Xk_0;
 	VectorReal Xk_1;
 
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 
 };
 
@@ -173,23 +176,24 @@ private:
 	real_t input_signals_data[2];
 	real_t output_signals_data[1];
 
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 
 };
 
-class Discrete_RST_Regulator: public DiscreteSystemMIMO, public Saturation {
+class Discrete_RST_Controller: public DiscreteSystemMIMO, public Saturation {
 
 public:
-	Discrete_RST_Regulator(size_t, size_t, size_t, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL);
+	Discrete_RST_Controller(size_t, size_t, size_t, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL, real_t* = NULL);
 	void states_set(const real_t*, const real_t*, const real_t*);
 	void states_set(real_t = 0, real_t = 0, real_t = 0);
 	void coeffs_set(const real_t*, const real_t*, const real_t*);
 	SubSystem create_control_loop(DiscreteSystemSISO&);
-private:
 
-	Vector<real_t> R_coeffs;
-	Vector<real_t> S_coeffs;
-	Vector<real_t> T_coeffs;
+	VectorReal R_coeffs;
+	VectorReal S_coeffs;
+	VectorReal T_coeffs;
+
+private:
 
 	VectorStates u_states;
 	VectorStates y_states;
@@ -197,7 +201,7 @@ private:
 	real_t input_signals_data[2];
 	real_t output_signals_data[1];
 
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 	real_t modify_output(real_t y) {
 		return Saturation::modify_output(y);
 	}
@@ -212,7 +216,7 @@ public:
 private:
 
 	VectorStates states;
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 	real_t modify_output(real_t y) {
 		return Saturation::modify_output(y);
 	}
@@ -227,9 +231,9 @@ public:
 	void coeffs_set(const real_t*);
 private:
 
-	Vector<real_t> coeffs;
+	VectorReal coeffs;
 	VectorStates states;
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 };
 
 class DiscreteDelay: public DiscreteSystemSISO {
@@ -238,7 +242,7 @@ public:
 	DiscreteDelay(size_t, real_t* = NULL);
 private:
 	VectorStates states;
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 
 };
 
@@ -263,7 +267,7 @@ public:
 private:
 	Vector<discrete_biquad_section_coeffs> coeffs;
 	Vector<discrete_biquad_section_states_DF_I_T> states;
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 
 };
 
@@ -274,7 +278,7 @@ public:
 private:
 	Vector<discrete_biquad_section_coeffs> coeffs;
 	Vector<discrete_biquad_section_states_DF_II_T> states;
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 
 };
 
@@ -311,7 +315,7 @@ public:
 private:
 #define S_gain I_gain
 
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 };
 
 class DiscreteIntegrator: public DiscreteTransferFunctionFirstOrder {
@@ -341,7 +345,7 @@ public:
 	DiscreteDerivative derivator;
 private:
 
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 };
 
 class DiscretePIregulator: public DiscreteSystemSISO, public PID_regulator_params, public DiscreteAntiWindup {
@@ -351,7 +355,7 @@ public:
 	DiscreteIntegrator integrator;
 private:
 
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 };
 
 class DiscreteIPregulator: public DiscreteSystemMIMO, public PID_regulator_params, public DiscreteAntiWindup {
@@ -364,48 +368,84 @@ private:
 	real_t input_signals_data[2];
 	real_t output_signals_data[1];
 
-	void step_function(const Vector<signal_realtime_T>&, Vector<signal_realtime_T>&);
+	void step_function(const Vector<Signal>&, Vector<Signal>&);
 };
 
-class DiscreteTransferFunctionRegressor {
-
-	DiscreteTransferFunctionRegressor(uint nb,uint na):u_states(nb),y_states(na)
-	{
-
-	}
+class VectorDiscreteRegressor: public VectorReal {
 
 public:
-	void iterate(real_t u, real_t y)
-	{
-		u_states.at()=u;
-		++u_states;
-		y_states.at()=-y;
-		++y_states;
+	VectorDiscreteRegressor(uint nb, uint na) :
+			VectorReal(nb + na), u_states(nb, data_ptr), y_states(na, data_ptr + nb) {
 	}
-	real_t& at(uint n) {
-		uint nb=u_states.get_length();
-		uint na=y_states.get_length();
-		if(n<nb)
-			return u_states[n];
-		else if(n<na+nb)
-			return y_states[n-nb];
-		else
-			throw exception_code(exception_INDEX_OUT_OF_RANGE);
+	VectorDiscreteRegressor(const VectorDiscreteRegressor& other) :
+			VectorDiscreteRegressor(other.u_states.get_length(), other.y_states.get_length()) {
+		u_states = other.u_states;
+		y_states = other.y_states;
 	}
-	real_t& operator[](uint n){
-		return at(n);
-	}
-	inline size_t get_length() const {
-		return u_states.get_length()+y_states.get_length();
-	}
+	void update(real_t, real_t);
+	real_t& at(uint);
 
+	inline size_t get_length() const {
+		return u_states.get_length() + y_states.get_length();
+	}
 private:
 	VectorStates u_states;
 	VectorStates y_states;
 
 };
 
-void discrete_transfer_function_vector_h_update(VectorReal&, real_t, real_t, size_t, size_t);
+class VectorDiscreteRegressor2Input: public VectorReal {
+
+public:
+	VectorDiscreteRegressor2Input(uint nb_1, uint nb_2, uint na) :
+			VectorReal(nb_1 + nb_2 + na), u1_states(nb_1, data_ptr), u2_states(nb_2, data_ptr + nb_1), y_states(na, data_ptr + nb_1 + nb_2) {
+	}
+	VectorDiscreteRegressor2Input(const VectorDiscreteRegressor2Input& other) :
+			VectorDiscreteRegressor2Input(other.u1_states.get_length(), other.u2_states.get_length(), other.y_states.get_length()) {
+		u1_states = other.u1_states;
+		u2_states = other.u2_states;
+		y_states = other.y_states;
+	}
+
+	void update(real_t, real_t, real_t);
+	real_t& at(uint);
+
+private:
+	VectorStates u1_states;
+	VectorStates u2_states;
+	VectorStates y_states;
+
+};
+
+class VectorDiscreteParameters: public VectorReal {
+
+public:
+	VectorDiscreteParameters(VectorReal& B, VectorReal& A) :
+			VectorReal(B.get_length() - 1 + A.get_length() - 1, B.get_data_ptr()), B(B), A(A) {
+	}
+
+	real_t& at(uint);
+private:
+	VectorReal& B;
+	VectorReal& A;
+
+};
+
+class VectorDiscreteParameters2Input: public VectorReal {
+
+public:
+	VectorDiscreteParameters2Input(VectorReal& B_1, VectorReal& B_2, VectorReal& A) :
+			VectorReal(B_1.get_length() - 1 + B_2.get_length() - 1 + A.get_length() - 1, B_1.get_data_ptr()), B_1(B_1), B_2(B_2), A(A) {
+	}
+
+	real_t& at(uint);
+
+private:
+	VectorReal& B_1;
+	VectorReal& B_2;
+	VectorReal& A;
+
+};
 
 }
 
