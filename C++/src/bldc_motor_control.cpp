@@ -6,11 +6,47 @@ using namespace MotorControl;
 static Transform::SinLookup<256> SinLUT;
 
 real_t Transform::sin(real_t fi) {
-	return SinLUT(fi);
+	//return SinLUT(fi);
+	return sinTaylor(fi);
 }
 
 real_t Transform::cos(real_t fi) {
-	return SinLUT(fi + half_PI);
+	//return SinLUT(fi + half_PI);
+	return sinTaylor(fi+ half_PI);
+}
+
+real_t Transform::sinTaylor(real_t x, uint n) {
+
+	int sign = 1;
+	if (x < 0) {
+		sign *= -1;
+		x = -x;
+	}
+	x = mod(x, two_PI);
+	if (x >= pi) {
+		sign *= -1;
+		x -= pi;
+	}
+	if (x >= half_PI) {
+		x = pi - x;
+	}
+
+	real_t sum = x;
+	{
+		uint factorial = 1;
+		real_t x_pow = x;
+		const real_t xx = POW2(x);
+
+		int s = 1;
+		for (uint k = 1; k <= n; k++) {
+			x_pow *= xx;
+			factorial *= (2 * k + 1) * 2 * k;
+			s *= -1;
+			sum += s * x_pow / (real_t) factorial;
+		}
+	}
+	return sum * sign;
+
 }
 
 void OpenLoopControlGeneric::setStates(const PositionAndSpeed& phi_omega) {
@@ -22,11 +58,11 @@ PositionAndSpeed OpenLoopControlGeneric::operator()() {
 
 	real_t omega_error = omegaRef - getOmega();
 	if (abs(omega_error) > omega_error_threshold) {
-		integrator_omega.input_port_real_value(0) = dOmega * SIGN(omega_error);
+		integrator_omega.input(0) = dOmega * SIGN(omega_error);
 		integrator_omega.step();
 	}
 	real_t omega = getOmega();
-	integrator_phi.input_port_real_value(0) = omega;
+	integrator_phi.input(0) = omega;
 	integrator_phi.step();
 	real_t phi = getPhi();
 	return PositionAndSpeed(phi, omega);
@@ -36,9 +72,9 @@ Vector2Phase OpenLoopControlIF::operator()(const Vector2Phase& iAB) {
 
 	OpenLoopControlGeneric::operator()();
 	real_t phi = getPhi();
-	iReg.input_port_real_value(0) = iRef - iAB.transformABtoDQ(phi).x;
+	iReg.input(0) = iRef - iAB.transformABtoDQ(phi).x;
 	iReg.step();
-	return Vector2Phase(iReg.output_port_real_value(0), 0).transformDQtoAB(phi);
+	return Vector2Phase(iReg.output(0), 0).transformDQtoAB(phi);
 }
 
 Vector2Phase OpenLoopControlUF::operator()(const Vector2Phase& iAB) {
@@ -56,24 +92,24 @@ Vector3Phase CurrentControl::operator()(const Vector3Phase& current) {
 	if (closed_loop) {
 		iDQ = iAB.transformABtoDQ(phi_omega.phi);
 		Vector2Phase error(iDQRef - iDQ);
-		idReg.input_port_real_value(0) = error.x;
-		iqReg.input_port_real_value(0) = error.y;
-		idReg.input_port_real_value(1) = iDQ.x;
-		iqReg.input_port_real_value(1) = iDQ.y;
+		idReg.input(0) = error.x;
+		iqReg.input(0) = error.y;
+		idReg.input(1) = iDQ.x;
+		iqReg.input(1) = iDQ.y;
 	} else {
 		open_loop_control.set_omegaRef(open_loop_omegaRef * SIGN(iDQRef.y));
 		open_loop_control();
 		iDQ = iAB.transformABtoDQ(open_loop_control.getPhi());
-		idReg.input_port_real_value(0) = 0;
-		iqReg.input_port_real_value(0) = open_loop_iQRef - iDQ.y;
-		idReg.input_port_real_value(1) = 0;
-		iqReg.input_port_real_value(1) = iDQ.y;
+		idReg.input(0) = 0;
+		iqReg.input(0) = open_loop_iQRef - iDQ.y;
+		idReg.input(1) = 0;
+		iqReg.input(1) = iDQ.y;
 	}
 
 	idReg.step();
 	iqReg.step();
 
-	Vector2Phase uDQ(idReg.output_port_real_value(0), iqReg.output_port_real_value(0));
+	Vector2Phase uDQ(idReg.output(0), iqReg.output(0));
 	if (closed_loop) {
 		if (decoupling_enable)
 			uDQ += Vector2Phase(-phi_omega.omega * iDQ.y * parameters.Lq, phi_omega.omega * iDQ.x * parameters.Ld);
@@ -96,14 +132,14 @@ Vector3Phase CurrentControl::operator()(const Vector3Phase& current) {
 
 void VoltageInverterSVPWM::setVoltage(const Vector3Phase& u) {
 	using namespace Operators;
-	Vector3Phase u_norm=Vector3Phase(u.a/Ucc,u.b/Ucc,u.c/Ucc);
-	real_t uN = (u_norm.max()+u_norm.min()-1.0)/2.0;
+	Vector3Phase u_norm = Vector3Phase(u.a / Ucc, u.b / Ucc, u.c / Ucc);
+	real_t uN = (u_norm.max() + u_norm.min() - 1.0) / 2.0;
 	setDuty(Vector3Phase(saturate((u_norm.a - uN), 1.0, 0), saturate((u_norm.b - uN), 1.0, 0), saturate((u_norm.c - uN), 1.0, 0)));
 }
 
 void VoltageInverterSVPWMmin::setVoltage(const Vector3Phase& u) {
 	using namespace Operators;
-	Vector3Phase u_norm=Vector3Phase(u.a/Ucc,u.b/Ucc,u.c/Ucc);
+	Vector3Phase u_norm = Vector3Phase(u.a / Ucc, u.b / Ucc, u.c / Ucc);
 	real_t uN = u_norm.min();
 	setDuty(Vector3Phase(saturate((u_norm.a - uN), 1.0, 0), saturate((u_norm.b - uN), 1.0, 0), saturate((u_norm.c - uN), 1.0, 0)));
 }
@@ -119,22 +155,22 @@ BEMFObserverLuenberg::BEMFObserverLuenberg(const MotorParametersElectrical& para
 
 Vector2Phase BEMFObserverLuenberg::estimate(const Vector2Phase& uS, const Vector2Phase& iS, real_t omega) {
 
-	real_t iAlfa = iAlfaIntegrator.output_port_real_value(0);
-	real_t iBeta = iBetaIntegrator.output_port_real_value(0);
+	real_t iAlfa = iAlfaIntegrator.output(0);
+	real_t iBeta = iBetaIntegrator.output(0);
 
-	real_t eAlfa = eAlfaIntegrator.output_port_real_value(0);
-	real_t eBeta = eBetaIntegrator.output_port_real_value(0);
+	real_t eAlfa = eAlfaIntegrator.output(0);
+	real_t eBeta = eBetaIntegrator.output(0);
 
 	real_t error_iAlfa = iS.x - iAlfa;
 	real_t error_iBeta = iS.y - iBeta;
 
-	eAlfaIntegrator.input_port_real_value(0) = error_iAlfa * g2;
-	eBetaIntegrator.input_port_real_value(0) = error_iBeta * g2;
+	eAlfaIntegrator.input(0) = error_iAlfa * g2;
+	eBetaIntegrator.input(0) = error_iBeta * g2;
 
 	real_t Ld_minus_LQ_mul_omega = omega = (parameters.Ld - parameters.Lq) * omega;
 
-	iAlfaIntegrator.input_port_real_value(0) = (uS.x - iAlfa * parameters.Rs - eAlfa - iS.y * Ld_minus_LQ_mul_omega) / parameters.Ld + error_iAlfa * g1;
-	iBetaIntegrator.input_port_real_value(0) = (uS.y - iBeta * parameters.Rs - eBeta + iS.x * Ld_minus_LQ_mul_omega) / parameters.Ld + error_iBeta * g1;
+	iAlfaIntegrator.input(0) = (uS.x - iAlfa * parameters.Rs - eAlfa - iS.y * Ld_minus_LQ_mul_omega) / parameters.Ld + error_iAlfa * g1;
+	iBetaIntegrator.input(0) = (uS.y - iBeta * parameters.Rs - eBeta + iS.x * Ld_minus_LQ_mul_omega) / parameters.Ld + error_iBeta * g1;
 
 	eAlfaIntegrator.step();
 	eBetaIntegrator.step();
@@ -142,7 +178,7 @@ Vector2Phase BEMFObserverLuenberg::estimate(const Vector2Phase& uS, const Vector
 	iAlfaIntegrator.step();
 	iBetaIntegrator.step();
 
-	return Vector2Phase(eAlfaIntegrator.output_port_real_value(0), eBetaIntegrator.output_port_real_value(0));
+	return Vector2Phase(eAlfaIntegrator.output(0), eBetaIntegrator.output(0));
 }
 
 real_t BEMF_PositionFeedbackPLLStandard::calculateError(const Vector2Phase& e) {
@@ -156,12 +192,12 @@ real_t BEMF_PositionFeedbackPLLImproved::calculateError(const Vector2Phase& e) {
 PositionAndSpeed BEMFPositionFeedbackPLLGeneric::getPositionAndSpeed(const Vector2Phase& e) {
 
 	error = calculateError(e.normalize_fast());
-	PI_regulator.input_port_real_value(0) = error;
+	PI_regulator.input(0) = error;
 	PI_regulator.step();
-	phi_omega.omega = PI_regulator.output_port_real_value(0);
-	integrator.input_port_real_value(0) = phi_omega.omega;
+	phi_omega.omega = PI_regulator.output(0);
+	integrator.input(0) = phi_omega.omega;
 	integrator.step();
-	phi_omega.phi = integrator.output_port_real_value(0);
+	phi_omega.phi = integrator.output(0);
 	phi_omega.n_revs += integrator.getIntegerPart();
 	return phi_omega;
 }
@@ -244,25 +280,28 @@ void IdentificationRsLdLq::estimate(MotorParametersElectrical& parameters) {
 	if (is_running())
 		return;
 
-	Polynom num(2);
-	Polynom den(2);
+	VectorReal num(2);
+	VectorReal den(2);
+	real_t K_d = 0;
+	real_t K_q = 0;
+	real_t T_d = 0;
+	real_t T_q = 0;
 	{
 		SystemIdentification::estimate_discrete_transfer_function(u_vector, id_data, num, den, 1, 1);
-		real_t K = num.sum() / den.sum();
-		real_t T = -1.0 / (SystemsConvert::discrete_root_to_continuous_root(Complex(-den[0], 0.0), Ts).get_real());
-		parameters.Rs = 1.0 / K;
-		parameters.Ld = T / K;
+		K_d = num.sum() / den.sum();
+		T_d = -1.0 / (SystemsConvert::discrete_root_to_continuous_root(Complex(-den[0], 0.0), Ts).get_real());
+		K_q = K_d;
+		T_q = K_q;
 	}
 	if (different_LqLd) {
 		SystemIdentification::estimate_discrete_transfer_function(u_vector, iq_data, num, den, 1, 1);
-		real_t K = num.sum() / den.sum();
-		real_t T = -1.0 / (SystemsConvert::discrete_root_to_continuous_root(Complex(-den[0], 0.0), Ts).get_real());
-		real_t Rs = 1.0 / K;
-		parameters.Rs = (parameters.Rs + Rs) / 2;
-		parameters.Lq = T / K;
-	} else {
-		parameters.Lq = parameters.Ld;
+		K_q = num.sum() / den.sum();
+		T_q = -1.0 / (SystemsConvert::discrete_root_to_continuous_root(Complex(-den[0], 0.0), Ts).get_real());
+
 	}
+	parameters.Rs = 1.0 / ((K_d + K_q) / 2.0);
+	parameters.Ld = T_d * parameters.Rs;
+	parameters.Lq = T_q * parameters.Rs;
 
 }
 
@@ -309,10 +348,10 @@ void IdentificationMechanical::operator()(real_t moment, real_t omega) {
 void IdentificationMechanical::estimate(MotorParametersMechanical& parameters) {
 	if (is_running())
 		return;
-	Polynom num(2);
-	Polynom den(2);
+	VectorReal num(2);
+	VectorReal den(2);
 
-	SystemIdentification::estimate_discrete_transfer_function(moment_data, omega_data, num, den, 1, 1);
+	SystemIdentification::estimate_discrete_transfer_function(moment_data, omega_data, num, den, 1, 1, VectorReal(moment_data, 5, 0).mean(), VectorReal(omega_data, 5, 0).mean());
 	real_t K = num.sum() / den.sum();
 	real_t T = -1.0 / (SystemsConvert::discrete_root_to_continuous_root(Complex(-den[0], 0.0), Ts).get_real());
 	parameters.B = 1.0 / K;
@@ -327,10 +366,10 @@ void IdentificationMechanical::reset() {
 }
 
 real_t SpeedControl::operator()(real_t omega) {
-	regulator.input_port_real_value(0) = omega_ref - omega;
-	regulator.input_port_real_value(1) = omega;
+	regulator.input(0) = omega_ref - omega;
+	regulator.input(1) = omega;
 	regulator.step();
-	return regulator.output_port_real_value(0);
+	return regulator.output(0);
 }
 
 LoadMomentObserver::LoadMomentObserver(const MotorParametersMechanical& parameters, approximation_method method, real_t Ts, real_t g1, real_t g2) :
@@ -343,15 +382,15 @@ LoadMomentObserver::LoadMomentObserver(const MotorParametersMechanical& paramete
 
 real_t LoadMomentObserver::estimate(real_t motor_moment, real_t omega) {
 
-	real_t omega_est = omegaIntegrator.output_port_real_value(0);
-	real_t load_moment_est = loadMomentIntegrator.output_port_real_value(0);
+	real_t omega_est = omegaIntegrator.output(0);
+	real_t load_moment_est = loadMomentIntegrator.output(0);
 	real_t error = omega - omega_est;
 
-	loadMomentIntegrator.input_port_real_value(0) = error * g2;
-	omegaIntegrator.input_port_real_value(0) = (motor_moment - omega_est * parameters.B - load_moment_est) / parameters.J + error * g1;
+	loadMomentIntegrator.input(0) = error * g2;
+	omegaIntegrator.input(0) = (motor_moment - omega_est * parameters.B - load_moment_est) / parameters.J + error * g1;
 
 	loadMomentIntegrator.step();
 	omegaIntegrator.step();
 
-	return loadMomentIntegrator.output_port_real_value(0);
+	return loadMomentIntegrator.output(0);
 }

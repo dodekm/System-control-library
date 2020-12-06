@@ -82,7 +82,7 @@ Matrix::Matrix(const Matrix& matSrc, bool copy_data) throw (exception_code) :
 	}
 }
 Matrix::Matrix(Matrix& matSrc, size_t n_rows, size_t n_cols, size_t row_offset, size_t col_offset) throw (exception_code) :
-		Matrix(n_rows, n_cols, matSrc.ptr_at(row_offset, col_offset), n_cols_mem) {
+		Matrix(n_rows, n_cols, matSrc.ptr_at(row_offset, col_offset), matSrc.n_cols_mem) {
 	matSrc.assert();
 #ifdef ASSERT_DIMENSIONS
 	if (n_rows + row_offset > matSrc.n_rows)
@@ -106,11 +106,12 @@ Matrix::Matrix(const gsl_matrix& gsl_mat) throw (exception_code) {
 Matrix Matrix::submatrix(size_t n_rows, size_t n_cols, size_t row_offset, size_t col_offset) throw (exception_code) {
 	return Matrix(*this, n_rows, n_cols, row_offset, col_offset);
 }
+
 Matrix Matrix::row(size_t row_number) throw (exception_code) {
-	return submatrix(1, n_cols, row_number, 0);
+	return Matrix(*this, 1, n_cols, row_number, 0);
 }
 Matrix Matrix::column(size_t column_number) throw (exception_code) {
-	return submatrix(n_rows, 1, 0, column_number);
+	return Matrix(*this, n_rows, 1, 0, column_number);
 }
 
 Matrix Matrix::diagonal() throw (exception_code) {
@@ -185,8 +186,13 @@ void Matrix::for_each(F lambda) throw (exception_code) {
 
 template<typename F>
 void Matrix::for_each(F lambda) const throw (exception_code) {
-	Matrix& mat = const_cast<Matrix&>(*this);
-	mat.for_each(lambda);
+	assert();
+	for (uint i = 0; i < n_rows; i++) {
+		for (uint j = 0; j < n_cols; j++) {
+			if (!lambda(at(i, j), i, j))
+				return;
+		}
+	}
 }
 
 template<typename F>
@@ -210,9 +216,21 @@ void Matrix::for_each(const Matrix& matSrc, F lambda) throw (exception_code) {
 }
 
 template<typename F>
-void Matrix::for_each(const Matrix& matSrcB, F lambda) const throw (exception_code) {
-	Matrix& matSrcA = const_cast<Matrix&>(*this);
-	matSrcA.for_each(matSrcB, lambda);
+void Matrix::for_each(const Matrix& matSrc, F lambda) const throw (exception_code) {
+	const Matrix& matDst = *this;
+	matSrc.assert();
+	matDst.assert();
+
+#ifdef ASSERT_DIMENSIONS
+	if (!matDst.equal_dimensions(matSrc))
+	throw exception_code(exception_WRONG_DIMENSIONS);
+#endif
+	for (uint i = 0; i < n_rows; i++) {
+		for (uint j = 0; j < n_cols; j++) {
+			if (!lambda(matDst.at(i, j), matSrc.at(i, j), i, j))
+				return;
+		}
+	}
 }
 
 template<typename F>
@@ -297,7 +315,7 @@ Matrix Matrix::transpose() const throw (exception_code) {
 	return mat_T;
 }
 
-Matrix& Matrix::multiply(const Matrix& matA, const Matrix& matB) throw (exception_code) {
+Matrix& Matrix::multiply(const Matrix& matA, const Matrix& matB, int accumulate) throw (exception_code) {
 
 	if (this == &matA || this == &matB)
 		throw exception_code(exception_ERROR);
@@ -328,13 +346,14 @@ Matrix& Matrix::multiply(const Matrix& matA, const Matrix& matB) throw (exceptio
 	if (returnval != exception_OK)
 	throw returnval;
 #else
+
 	for (uint i = 0; i < n_rows; i++) {
 		for (uint j = 0; j < n_cols; j++) {
 			real_t sum = 0;
 			for (uint n = 0; n < matA.n_cols; n++) {
 				sum += matA(i, n) * matB(n, j);
 			}
-			matDst(i, j) = sum;
+			matDst(i, j) = accumulate * matDst(i, j) + sum;
 		}
 	}
 
@@ -351,7 +370,7 @@ Matrix Matrix::multiply(const Matrix& matB) const throw (exception_code) {
 	return matDst;
 }
 
-VectorReal& Matrix::multiply(const VectorReal& X, VectorReal& Y) const throw (exception_code) {
+VectorReal& Matrix::multiply(const VectorReal& X, VectorReal& Y, int accumulate) const throw (exception_code) {
 	const Matrix& A = *this;
 	if (&X == &Y)
 		throw exception_code(exception_ERROR);
@@ -384,11 +403,40 @@ VectorReal& Matrix::multiply(const VectorReal& X, VectorReal& Y) const throw (ex
 		for (uint n = 0; n < n_cols; n++) {
 			sum += A(i, n) * X[n];
 		}
-		Y[i] = sum;
+		Y[i] = Y[i] * accumulate + sum;
 	}
+
 #endif
 	return Y;
 }
+
+Matrix& Matrix::multiplyTvector(const VectorReal& X, const VectorReal& YT) throw (exception_code) {
+
+	X.assert();
+	YT.assert();
+	try {
+		assert();
+	} catch (...) {
+		*this = Matrix(X.get_length(), YT.get_length());
+	}
+
+#ifdef ASSERT_DIMENSIONS
+	if (n_rows != X.get_length())
+	throw exception_code(exception_WRONG_DIMENSIONS);
+	if (n_cols != YT.get_length())
+	throw exception_code(exception_WRONG_DIMENSIONS);
+#endif
+
+	Matrix& matDst = *this;
+	for (uint i = 0; i < n_rows; i++) {
+		for (uint j = 0; j < n_cols; j++) {
+			matDst(i, j) = X[i] * YT[j];
+		}
+	}
+	return *this;
+
+}
+
 VectorReal Matrix::multiply(const VectorReal& X) const throw (exception_code) {
 	VectorReal Y(n_rows);
 	multiply(X, Y);
@@ -666,6 +714,20 @@ MatrixPermRow& MatrixPermRow::LU_decompose() {
 }
 
 VectorReal& MatrixPermRow::LU_subs(const VectorReal& B, VectorReal& X) const {
+
+	B.assert();
+	try {
+		X.assert();
+	} catch (...) {
+		X = VectorReal(n_rows);
+	}
+#ifdef ASSERT_DIMENSIONS
+	if (!is_square())
+	throw exception_WRONG_DIMENSIONS;
+	if (n_rows != B.get_length() || n_rows != X.get_length())
+	throw exception_WRONG_DIMENSIONS;
+#endif
+
 	const MatrixPermRow& LU = *this;
 
 	for (int i = 0; i < (int) n_rows; i++) {
@@ -684,26 +746,55 @@ VectorReal& MatrixPermRow::LU_subs(const VectorReal& B, VectorReal& X) const {
 	return X;
 }
 
-VectorReal& MatrixPermRow::LU_solve(const VectorReal& B, VectorReal& X) {
-	const MatrixPermRow& LU = *this;
+void MatrixPermRow::LU_inv(Matrix& I) const {
 
-	assert();
-	B.assert();
 	try {
-		X.assert();
+		I.assert();
 	} catch (...) {
-		X = VectorReal(n_rows);
+		I = Matrix(n_rows, n_cols);
 	}
 #ifdef ASSERT_DIMENSIONS
-	if (!is_square())
+	if (!I.is_square())
 	throw exception_WRONG_DIMENSIONS;
-	if (n_rows != B.get_length() || n_rows != X.get_length())
+	if (!equal_dimensions(I))
 	throw exception_WRONG_DIMENSIONS;
 #endif
+
+	const MatrixPermRow& LU = *this;
+
+	for (int j = 0; j < (int)n_rows; j++) {
+		for (int i = 0; i < (int)n_rows; i++) {
+			I(i, j) = (int)permutations[i] == j ? 1.0 : 0.0;
+
+			for (int k = 0; k < i; k++) {
+				I(i, j) -= LU(i, k) * I(k, j);
+			}
+		}
+		for (int i = n_rows - 1; i >= 0; i--) {
+			for (int k = i + 1; k < (int)n_rows; k++) {
+				I(i, j) -= LU(i, k) * I(k, j);
+			}
+			I(i, j) /= LU(i, i);
+		}
+	}
+
+}
+
+VectorReal& MatrixPermRow::LU_solve(const VectorReal& B, VectorReal& X) {
+	const MatrixPermRow& LU = *this;
 
 	LU_decompose();
 	LU.LU_subs(B, X);
 	return X;
+}
+
+real_t MatrixPermRow::LU_det() const {
+	const MatrixPermRow& LU = *this;
+	real_t det = 1.0;
+	for (uint i = 0; i < n_rows; i++) {
+		det *= LU(i, i);
+	}
+	return s * det;
 }
 
 Matrix& Matrix::exp(const Matrix& mat_base, uint series_order) throw (exception_code) {
@@ -782,6 +873,4 @@ Matrix& Matrix::power(const Matrix& mat_base, uint power) throw (exception_code)
 	}
 	return mat_pow;
 }
-
-
 

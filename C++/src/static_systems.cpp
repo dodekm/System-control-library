@@ -5,14 +5,11 @@ using namespace SystemControl;
 real_t StaticSystem::eval(real_t u) {
 
 	real_t y=0;
-	signal_realtime_T input_signal, output_signal;
-	input_signal.owner = NULL;
-	input_signal.ptr = &u;
-	output_signal.owner = NULL;
-	output_signal.ptr = &y;
+	Signal input_signal(&u);
+	Signal output_signal(&y);
 
-	const Vector<signal_realtime_T> input_signals(1, &input_signal);
-	Vector<signal_realtime_T> output_signals(1, &output_signal);
+	const Vector<Signal> input_signals(1, &input_signal);
+	Vector<Signal> output_signals(1, &output_signal);
 	eval_function(input_signals, output_signals);
 	return y;
 
@@ -23,9 +20,9 @@ StaticSystem::StaticSystem(size_t input_port_width, real_t* input_port_ptr, size
 }
 
 StaticSystemSISO::StaticSystemSISO() :
-		StaticSystem(1, &input, 1, &output) {
-	input = 0;
-	output = 0;
+		StaticSystem(1, &input_data, 1, &output_data) {
+	input_data = 0;
+	output_data = 0;
 }
 
 StaticSystemMIMO::StaticSystemMIMO(size_t input_port_width, real_t* input_port_ptr, size_t output_port_width, real_t* output_port_ptr) :
@@ -37,73 +34,65 @@ StaticSystemMIMO::StaticSystemMIMO(size_t input_port_width, real_t* input_port_p
 		memset(output_port_ptr, 0, sizeof(real_t) * output_port_width);
 }
 
-void StaticSystemSaturation::eval_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void StaticSystemSaturation::eval_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != 1 || output_signals.get_length() != 1)
 		throw exception_WRONG_DIMENSIONS;
 #endif
 
-	const real_t u = *input_signals.at(0).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
-
+	const real_t u = input_signals.at(0);
 	real_t y = u;
-
 	y = CLIP_TOP(y, upper_limit);
 	y = CLIP_BOTTOM(y, lower_limit);
-	*y_ptr = y;
+	output_signals.at(0) = y;
 }
 
-void StaticSystemDeadzone::eval_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void StaticSystemDeadzone::eval_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != 1 || output_signals.get_length() != 1)
 		throw exception_WRONG_DIMENSIONS;
 #endif
 
-	const real_t u = *input_signals.at(0).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
-
+	const real_t u = input_signals.at(0);
 	real_t y = 0;
 	if (u > treshold_high)
 		y = u - treshold_high;
 	if (u < treshold_low)
 		y = u - treshold_low;
-	*y_ptr = y;
+	output_signals.at(0) = y;
 
 }
 
-void StaticSystemGain::eval_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void StaticSystemGain::eval_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != 1 || output_signals.get_length() != 1)
 		throw exception_WRONG_DIMENSIONS;
 #endif
 
-	const real_t u = *input_signals.at(0).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	const real_t u = input_signals.at(0);
 	real_t y = u * gain;
-	*y_ptr = y;
+	output_signals.at(0) = y;
 
 }
 
-void StaticSystemQuantize::eval_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void StaticSystemQuantize::eval_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != 1 || output_signals.get_length() != 1)
 		throw exception_WRONG_DIMENSIONS;
 #endif
 
-	const real_t u = *input_signals.at(0).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	const real_t u = input_signals.at(0);
 	real_t y = Operators::quantize(u, step_size);
-	*y_ptr = y;
+	output_signals.at(0) = y;
 }
 
-void StaticSystemRelay::eval_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void StaticSystemRelay::eval_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != 1 || output_signals.get_length() != 1)
 		throw exception_WRONG_DIMENSIONS;
 #endif
-	const real_t u = *input_signals.at(0).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	const real_t u = input_signals.at(0);
 	real_t y = y_last;
 	if (y_last == value_on) {
 		if (u < treshold_switch_off)
@@ -113,62 +102,61 @@ void StaticSystemRelay::eval_function(const Vector<signal_realtime_T>& input_sig
 			y = value_on;
 	}
 	y_last = y;
-	*y_ptr = y;
+	output_signals.at(0) = y;
 
 }
 
-void StaticSystemSum::eval_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void StaticSystemSum::eval_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != 2 || output_signals.get_length() != 1)
 		throw exception_WRONG_DIMENSIONS;
 #endif
 
-	const real_t u_1 = *input_signals.at(0).ptr;
-	const real_t u_2 = *input_signals.at(1).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	const real_t u_1 = input_signals.at(0);
+	const real_t u_2 = input_signals.at(1);
 	real_t y = u_1 + u_2;
-	*y_ptr = y;
+	output_signals.at(0) = y;
 }
 
-void StaticSystemSub::eval_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void StaticSystemSub::eval_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != 2 || output_signals.get_length() != 1)
 		throw exception_WRONG_DIMENSIONS;
 #endif
 
-	const real_t u_1 = *input_signals.at(0).ptr;
-	const real_t u_2 = *input_signals.at(1).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	const real_t u_1 = input_signals.at(0);
+	const real_t u_2 = input_signals.at(1);
+
 	real_t y = u_1 - u_2;
-	*y_ptr = y;
+	output_signals.at(0) = y;
 
 }
 
-void StaticSystemProduct::eval_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void StaticSystemProduct::eval_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != 2 || output_signals.get_length() != 1)
 		throw exception_WRONG_DIMENSIONS;
 #endif
 
-	const real_t u_1 = *input_signals.at(0).ptr;
-	const real_t u_2 = *input_signals.at(1).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	const real_t u_1 = input_signals.at(0);
+	const real_t u_2 = input_signals.at(1);
+
 	real_t y = u_1 * u_2;
-	*y_ptr = y;
+	output_signals.at(0) = y;
 }
 
-void StaticSystemPortOperator::eval_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void StaticSystemPortOperator::eval_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != input_port.get_length() || output_signals.get_length() != 1)
 		throw exception_WRONG_DIMENSIONS;
 #endif
-	real_t* y_ptr = output_signals.at(0).ptr;
+
 	real_t y = 0;
 	for (uint i = 0; i < operators.get_length(); i++) {
-		real_t u = *(input_signals[i].ptr);
+		real_t u = input_signals[i];
 		y = operators[i](y, u);
 	}
-	*y_ptr = y;
+	output_signals.at(0)= y;
 
 
 }

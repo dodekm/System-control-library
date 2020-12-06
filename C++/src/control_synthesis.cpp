@@ -61,7 +61,7 @@ void ControlSynthesis::convolution_matrix(const VectorReal& g, Matrix& convMat, 
 
 #ifdef ASSERT_DIMENSIONS
 	if ((int) convMat.get_n_rows() != f_g_length || convMat.get_n_cols() != f_length)
-		throw exception_WRONG_DIMENSIONS;
+	throw exception_WRONG_DIMENSIONS;
 #endif
 
 	for (int i = 0; i < f_g_length; i++) {
@@ -83,17 +83,17 @@ Matrix ControlSynthesis::convolution_matrix(const VectorReal& g, uint f_length) 
 	return convMat;
 }
 
-void ControlSynthesis::RST_poleplace(const Polynom& A, const Polynom& B, const Polynom& P, Polynom& R, Polynom& S, Polynom& T) {
+void ControlSynthesis::RST_poleplace(const VectorReal& A, const VectorReal& B, const VectorReal& P, VectorReal& R, VectorReal& S, VectorReal& T) {
 
 	A.assert();
 	B.assert();
 	P.assert();
 
-	int P_length = (int) P.get_length();
-	if (P_length != (int) (A.get_length() + B.get_length() - 1))
+	size_t P_length = P.get_length();
+	if (P_length != (A.get_length() + B.get_length() - 2))
 		throw exception_WRONG_DIMENSIONS;
-	int R_length = (int) B.get_length();
-	int S_length = (int) A.get_length() - 1;
+	size_t R_length = B.get_length() - 1;
+	size_t S_length = A.get_length() - 1;
 
 	try {
 		R.assert();
@@ -111,18 +111,18 @@ void ControlSynthesis::RST_poleplace(const Polynom& A, const Polynom& B, const P
 		T = Polynom(1);
 	}
 
-#ifdef ASSERT_DIMENSIONS
-	if ((int) R.get_length() != R_length)
+#ifndef ASSERT_DIMENSIONS
+	if (R.get_length() != R_length)
 		throw exception_WRONG_DIMENSIONS;
-	if ((int) S.get_length() != S_length)
+	if (S.get_length() != S_length)
 		throw exception_WRONG_DIMENSIONS;
-	if ((int) T.get_length() != 1)
+	if (T.get_length() != 1)
 		throw exception_WRONG_DIMENSIONS;
 #endif
 
 	Matrix M(P_length, P_length);
-	Matrix M_submatrix_A = M.submatrix(P_length, R_length, 0, 0);
-	Matrix M_submatrix_B = M.submatrix(P_length - 1, S_length, 1, R_length);
+	Matrix M_submatrix_A(M, P_length, R_length, 0, 0);
+	Matrix M_submatrix_B(M, P_length, S_length, 0, R_length);
 
 	convolution_matrix(A, M_submatrix_A, R_length);
 	convolution_matrix(B, M_submatrix_B, S_length);
@@ -130,12 +130,11 @@ void ControlSynthesis::RST_poleplace(const Polynom& A, const Polynom& B, const P
 	VectorReal X;
 	M.solve(P, X);
 
-	R.load_data(X.get_data_ptr());
-	S.load_data(X.get_data_ptr() + R_length);
+	R = VectorReal(X, R_length, 0);
+	S = VectorReal(X, S_length, R_length);
 	T[0] = P.sum() / B.sum();
 
 }
-
 
 void ControlSynthesis::PI_poleplace(const System1stOrderParams& system_params, const ReferencePolynom2ndOrder& desired_polynom, PID_regulator_params& regulator_params) {
 

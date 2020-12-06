@@ -42,8 +42,7 @@ void ModelContinuous::update_derivatives_fcn(real_t time, step_type step_type) {
 		if (system_cont == NULL)
 		throw exception_NULLPTR;
 		system_cont->update_derivatives_fcn(time, step_type);
-		//VectorReal dX_subvector=dX.subvector(system_cont->get_order(),state);
-		VectorReal dX_subvector(system_cont->get_order(),dX.get_data_ptr()+state);
+		VectorReal dX_subvector(dX,system_cont->get_order(),state);
 		dX_subvector = system_cont->get_derivatives();
 		state += system_cont->get_order();
 		return true;
@@ -57,8 +56,7 @@ void ModelContinuous::update_output_fcn(real_t time, step_type step_type) {
 	auto lambda = [&](ContinuousSystem* system_cont,uint i)->auto {
 		if (system_cont == NULL)
 		throw exception_NULLPTR;
-		//VectorReal X_subvector=X.subvector(system_cont->get_order(),state);
-		VectorReal X_subvector(system_cont->get_order(),X.get_data_ptr()+state);
+		const VectorReal X_subvector(X,system_cont->get_order(),state);
 		system_cont->get_states() = X_subvector;
 		system_cont->update_output_fcn(time, step_type);
 		state += system_cont->get_order();

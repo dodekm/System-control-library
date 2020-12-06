@@ -4,20 +4,16 @@ using namespace SystemControl;
 
 void System::assign_port_pointers(real_t* input_port_ptr, real_t* output_port_ptr) {
 
-	signal_realtime_T signal_struct = { 0 };
-	signal_struct.owner = this;
 	if (input_port_ptr != NULL) {
 		input_port.assert();
 		for (uint i = 0; i < input_port.get_length(); i++) {
-			signal_struct.ptr = input_port_ptr + i;
-			input_port.at(i) = signal_struct;
+			input_port.at(i) = Signal(input_port_ptr + i,this);
 		}
 	}
 	if (output_port_ptr != NULL) {
 		output_port.assert();
 		for (uint i = 0; i < output_port.get_length(); i++) {
-			signal_struct.ptr = output_port_ptr + i;
-			output_port.at(i) = signal_struct;
+			output_port.at(i) = Signal(output_port_ptr+ i,this);
 		}
 	}
 
@@ -78,9 +74,9 @@ SubSystem SubSystem::connect_paralel(Vector<System*>&systems_list, System& syste
 #endif
 
 	bool common_input = true;
-	signal_realtime_T common_input_signal = systems_list[0]->input_port_struct(0);
+	Signal common_input_signal = systems_list[0]->input_port_struct(0);
 	for (uint i = 0; i < n_systems; i++) {
-		if (systems_list[i]->input_port_struct(0).owner != common_input_signal.owner || systems_list[i]->input_port_struct(0).ptr != common_input_signal.ptr) {
+		if (!(systems_list[i]->input_port_struct(0) == common_input_signal)) {
 			common_input = false;
 			break;
 		}

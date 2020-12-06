@@ -9,20 +9,29 @@ DiscreteSystem::DiscreteSystem(size_t input_port_width, real_t* input_port_ptr, 
 real_t DiscreteSystem::step(real_t u) {
 
 	real_t y = 0;
-	signal_realtime_T input_signal, output_signal;
-	input_signal.owner = NULL;
-	input_signal.ptr = &u;
-	output_signal.owner = NULL;
-	output_signal.ptr = &y;
+	Signal input_signal(&u);
+	Signal output_signal(&y);
 
-	const Vector<signal_realtime_T> input_signals(1, &input_signal);
-	Vector<signal_realtime_T> output_signals(1, &output_signal);
-	step_function(input_signals, output_signals);
+	const Vector<Signal> input_signals_vector(1, &input_signal);
+	Vector<Signal> output_signals_vector(1, &output_signal);
+	step_function(input_signals_vector, output_signals_vector);
+	return y;
+}
+
+real_t DiscreteSystem::step(real_t u_1, real_t u_2) {
+
+	real_t y = 0;
+	Signal input_signals[2]={Signal(&u_1),Signal(&u_2)};
+	Signal output_signal(&y);
+
+	const Vector<Signal> input_signals_vector(2, input_signals);
+	Vector<Signal> output_signals_vector(1, &output_signal);
+	step_function(input_signals_vector, output_signals_vector);
 	return y;
 }
 
 DiscreteSystemSISO::DiscreteSystemSISO() :
-		DiscreteSystem(1, &input, 1, &output), input(0), output(0) {
+		DiscreteSystem(1, &input_data, 1, &output_data), input_data(0), output_data(0) {
 }
 
 DiscreteSystemMIMO::DiscreteSystemMIMO(size_t input_port_width, real_t* input_port_ptr, size_t output_port_width, real_t* output_port_ptr) :
@@ -56,10 +65,9 @@ void DiscreteTransferFunction::states_set(real_t input_states_value, real_t outp
 	output_states.reset();
 }
 
-void DiscreteTransferFunction::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void DiscreteTransferFunction::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
-	const real_t u = *input_signals.at(0).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	const real_t u = input_signals.at(0);
 
 	real_t y = 0;
 	input_states.at() = u;
@@ -78,7 +86,7 @@ void DiscreteTransferFunction::step_function(const Vector<signal_realtime_T>& in
 	y = modify_output(y);
 	output_states.at() = y;
 	++output_states;
-	*y_ptr = y;
+	output_signals.at(0) = y;
 
 }
 
@@ -93,10 +101,9 @@ void DiscreteStateSpace::states_set(real_t X_values) {
 	Xk_1.set_all(X_values);
 }
 
-void DiscreteStateSpace::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void DiscreteStateSpace::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
-	const real_t u = *input_signals.at(0).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	const real_t u = input_signals.at(0);
 	real_t y = 0;
 
 	Xk_0 = Xk_1;
@@ -128,7 +135,7 @@ void DiscreteStateSpace::step_function(const Vector<signal_realtime_T>& input_si
 
 #endif
 	y = modify_output(y);
-	*y_ptr = y;
+	output_signals.at(0)= y;
 
 }
 
@@ -143,11 +150,10 @@ void DiscreteLuenbergObserver::states_set(real_t X_values) {
 	Xk_1.set_all(X_values);
 }
 
-void DiscreteLuenbergObserver::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void DiscreteLuenbergObserver::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
-	const real_t u = *input_signals.at(0).ptr;
-	const real_t y_meas = *input_signals.at(1).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	const real_t u = input_signals.at(0);
+	const real_t y_meas = input_signals.at(1);
 	real_t y = 0;
 
 	Xk_0 = Xk_1;
@@ -187,15 +193,15 @@ void DiscreteLuenbergObserver::step_function(const Vector<signal_realtime_T>& in
 	Xk_1.multiply_by_scalar_and_accumulate(B, u);
 	Xk_1.multiply_by_scalar_and_accumulate(L, e);
 #endif
-	*y_ptr = y;
+	output_signals.at(0)=y;
 }
 
-Discrete_RST_Regulator::Discrete_RST_Regulator(size_t R_order, size_t S_order, size_t T_order, real_t* R_coeffs_ptr, real_t* S_coeffs_ptr, real_t* T_coeffs_ptr, real_t* u_states_ptr, real_t* y_states_ptr, real_t* w_states_ptr) :
+Discrete_RST_Controller::Discrete_RST_Controller(size_t R_order, size_t S_order, size_t T_order, real_t* R_coeffs_ptr, real_t* S_coeffs_ptr, real_t* T_coeffs_ptr, real_t* u_states_ptr, real_t* y_states_ptr, real_t* w_states_ptr) :
 		DiscreteSystemMIMO(2, input_signals_data, 1, output_signals_data), R_coeffs(R_order + 1, R_coeffs_ptr), S_coeffs(S_order + 1, S_coeffs_ptr), T_coeffs(T_order + 1, T_coeffs_ptr), u_states(R_order + 1, u_states_ptr), y_states(S_order + 1, y_states_ptr), w_states(T_order + 1, w_states_ptr) {
 	states_set(0.0, 0.0, 0.0);
 }
 
-void Discrete_RST_Regulator::states_set(const real_t* u_states_ptr, const real_t* y_states_ptr, const real_t* w_states_ptr) {
+void Discrete_RST_Controller::states_set(const real_t* u_states_ptr, const real_t* y_states_ptr, const real_t* w_states_ptr) {
 
 	if (u_states_ptr != NULL) {
 		u_states.load_data(u_states_ptr);
@@ -211,7 +217,7 @@ void Discrete_RST_Regulator::states_set(const real_t* u_states_ptr, const real_t
 	}
 
 }
-void Discrete_RST_Regulator::states_set(real_t u_states_value, real_t y_states_value, real_t w_states_value) {
+void Discrete_RST_Controller::states_set(real_t u_states_value, real_t y_states_value, real_t w_states_value) {
 
 	u_states.set_all(u_states_value);
 	u_states.reset();
@@ -221,7 +227,7 @@ void Discrete_RST_Regulator::states_set(real_t u_states_value, real_t y_states_v
 	w_states.reset();
 }
 
-void Discrete_RST_Regulator::coeffs_set(const real_t* R_coeffs_ptr, const real_t* S_coeffs_ptr, const real_t* T_coeffs_ptr) {
+void Discrete_RST_Controller::coeffs_set(const real_t* R_coeffs_ptr, const real_t* S_coeffs_ptr, const real_t* T_coeffs_ptr) {
 
 	if (R_coeffs_ptr != NULL) {
 		R_coeffs.load_data(R_coeffs_ptr);
@@ -234,16 +240,15 @@ void Discrete_RST_Regulator::coeffs_set(const real_t* R_coeffs_ptr, const real_t
 	}
 }
 
-void Discrete_RST_Regulator::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void Discrete_RST_Controller::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != 2 || output_signals.get_length() != 1)
 	throw exception_WRONG_DIMENSIONS;
 #endif
 
-	const real_t w = *input_signals.at(0).ptr;
-	const real_t y = *input_signals.at(1).ptr;
-	real_t* u_ptr = output_signals.at(0).ptr;
+	const real_t w = input_signals.at(0);
+	const real_t y = input_signals.at(1);
 
 	w_states.at() = w;
 	real_t u = 0;
@@ -266,10 +271,10 @@ void Discrete_RST_Regulator::step_function(const Vector<signal_realtime_T>& inpu
 	u = modify_output(u);
 	u_states.at() = u;
 	++u_states;
-	*u_ptr = u;
+	output_signals.at(0) = u;
 }
 
-SubSystem Discrete_RST_Regulator::create_control_loop(DiscreteSystemSISO& system) {
+SubSystem Discrete_RST_Controller::create_control_loop(DiscreteSystemSISO& system) {
 
 	{
 
@@ -305,10 +310,9 @@ void DiscreteIIRfilterDFII::states_set(real_t states_value) {
 	states.reset();
 }
 
-void DiscreteIIRfilterDFII::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void DiscreteIIRfilterDFII::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
-	const real_t u = *input_signals.at(0).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	const real_t u = input_signals.at(0);
 	real_t v = u;
 
 	size_t order = get_order();
@@ -324,7 +328,7 @@ void DiscreteIIRfilterDFII::step_function(const Vector<signal_realtime_T>& input
 	}
 	++states;
 	y = modify_output(y);
-	*y_ptr = y;
+	output_signals.at(0) = y;
 
 }
 
@@ -349,11 +353,9 @@ void DiscreteFIRfilter::coeffs_set(const real_t* coeffs_ptr) {
 
 }
 
-void DiscreteFIRfilter::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void DiscreteFIRfilter::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
-	const real_t u = *input_signals.at(0).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
-
+	const real_t u = input_signals.at(0);
 	states.at() = u;
 	real_t y = 0;
 
@@ -362,7 +364,7 @@ void DiscreteFIRfilter::step_function(const Vector<signal_realtime_T>& input_sig
 	}
 	++states;
 	y = modify_output(y);
-	*y_ptr = y;
+	output_signals.at(0) = y;
 
 }
 
@@ -371,14 +373,13 @@ DiscreteDelay::DiscreteDelay(size_t order, real_t* states_ptr) :
 	states.set_all(0);
 }
 
-void DiscreteDelay::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void DiscreteDelay::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
-	const real_t u = *input_signals.at(0).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	const real_t u = input_signals.at(0);
 	states.at() = u;
 	real_t y = states[0];
 	++states;
-	*y_ptr = y;
+	output_signals.at(0) = y;
 
 }
 
@@ -401,10 +402,9 @@ DiscreteBiquadSOSfilterDFI::DiscreteBiquadSOSfilterDFI(size_t n_stages, discrete
 	states.set_all(states_value);
 }
 
-void DiscreteBiquadSOSfilterDFI::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void DiscreteBiquadSOSfilterDFI::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
-	real_t u = *input_signals.at(0).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	real_t u = input_signals.at(0);
 	size_t n_stages = states.get_length();
 
 	real_t y = 0;
@@ -413,7 +413,7 @@ void DiscreteBiquadSOSfilterDFI::step_function(const Vector<signal_realtime_T>& 
 		u = y;
 	}
 
-	*y_ptr = y;
+	output_signals.at(0) = y;
 }
 
 static real_t discrete_biquad_section_DF_II_step(discrete_biquad_section_states_DF_II_T* filter_states, discrete_biquad_section_coeffs_T* filter_coeffs, real_t u) {
@@ -433,10 +433,9 @@ DiscreteBiquadSOSfilterDFII::DiscreteBiquadSOSfilterDFII(size_t n_stages, discre
 	states.set_all(states_value);
 }
 
-void DiscreteBiquadSOSfilterDFII::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void DiscreteBiquadSOSfilterDFII::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
-	real_t u = *input_signals.at(0).ptr;
-	real_t* y_ptr = output_signals.at(0).ptr;
+	real_t u = input_signals.at(0);
 	size_t n_stages = states.get_length();
 
 	real_t y = 0;
@@ -444,8 +443,7 @@ void DiscreteBiquadSOSfilterDFII::step_function(const Vector<signal_realtime_T>&
 		y = discrete_biquad_section_DF_II_step(states.get_data_ptr() + i, coeffs.get_data_ptr() + i, u);
 		u = y;
 	}
-
-	*y_ptr = y;
+	output_signals.at(0) = y;
 
 }
 
@@ -469,10 +467,9 @@ DiscretePSDregulator::DiscretePSDregulator(real_t P_gain, real_t S_gain, real_t 
 		PID_regulator_params(P_gain, S_gain, D_gain), sumator(0), diference(0) {
 }
 
-void DiscretePSDregulator::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void DiscretePSDregulator::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
-	const real_t e = *input_signals.at(0).ptr;
-	real_t* u_ptr = output_signals.at(0).ptr;
+	const real_t e = input_signals.at(0);
 
 	real_t u = 0;
 	real_t u_P = 0;
@@ -480,21 +477,21 @@ void DiscretePSDregulator::step_function(const Vector<signal_realtime_T>& input_
 	real_t u_D = 0;
 
 	if (S_gain != (real_t) 0) {
-		sumator.input_port_real_value(0) = e + get_AW_correction();
+		sumator.input(0) = e + get_AW_correction();
 		sumator.step();
-		u_S = S_gain * sumator.output_port_real_value(0);
+		u_S = S_gain * sumator.output(0);
 	}
 	if (D_gain != (real_t) 0) {
-		diference.input_port_real_value(0) = e;
+		diference.input(0) = e;
 		diference.step();
-		u_D = D_gain * diference.output_port_real_value(0);
+		u_D = D_gain * diference.output(0);
 	}
 	if (P_gain != (real_t) 0) {
 		u_P = P_gain * e;
 	}
 	u = u_P + u_S + u_D;
 	u = DiscreteAntiWindup::modify_output(u);
-	*u_ptr = u;
+	output_signals.at(0) = u;
 
 }
 
@@ -559,10 +556,9 @@ DiscretePIDregulator::DiscretePIDregulator(real_t sample_time, real_t P_gain, re
 		PID_regulator_params(P_gain, I_gain, D_gain), integrator(method, sample_time), derivator(method, sample_time, N_gain) {
 }
 
-void DiscretePIDregulator::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void DiscretePIDregulator::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
-	const real_t e = *input_signals.at(0).ptr;
-	real_t* u_ptr = output_signals.at(0).ptr;
+	const real_t e = input_signals.at(0);
 
 	real_t u = 0;
 	real_t u_P = 0;
@@ -570,88 +566,137 @@ void DiscretePIDregulator::step_function(const Vector<signal_realtime_T>& input_
 	real_t u_D = 0;
 
 	if (I_gain != (real_t) 0) {
-		integrator.input_port_real_value(0) = e + get_AW_correction();
+		integrator.input(0) = e + get_AW_correction();
 		integrator.step();
-		u_I = I_gain * integrator.output_port_real_value(0);
+		u_I = I_gain * integrator.output(0);
 	}
 	if (D_gain != (real_t) 0) {
-		derivator.input_port_real_value(0) = e;
+		derivator.input(0) = e;
 		derivator.step();
-		u_D = D_gain * derivator.output_port_real_value(0);
+		u_D = D_gain * derivator.output(0);
 	}
 	if (P_gain != (real_t) 0) {
 		u_P = P_gain * e;
 	}
 	u = u_P + u_I + u_D;
 	u = DiscreteAntiWindup::modify_output(u);
-	*u_ptr = u;
+	output_signals.at(0) = u;
 }
 DiscretePIregulator::DiscretePIregulator(real_t sample_time, real_t P_gain, real_t I_gain, approximation_method method) :
 		PID_regulator_params(P_gain, I_gain, 0), integrator(method, sample_time) {
 }
 
-void DiscretePIregulator::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void DiscretePIregulator::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
-	const real_t e = *input_signals.at(0).ptr;
-	real_t* u_ptr = output_signals.at(0).ptr;
+	const real_t e = input_signals.at(0);
 
 	real_t u = 0;
 	real_t u_P = 0;
 	real_t u_I = 0;
 
-	integrator.input_port_real_value(0) = e + get_AW_correction();
+	integrator.input(0) = e + get_AW_correction();
 	integrator.step();
-	u_I = I_gain * integrator.output_port_real_value(0);
+	u_I = I_gain * integrator.output(0);
 	u_P = P_gain * e;
 	u = u_P + u_I;
 	u = DiscreteAntiWindup::modify_output(u);
-	*u_ptr = u;
+	output_signals.at(0) = u;
 }
 
 DiscreteIPregulator::DiscreteIPregulator(real_t sample_time, real_t P_gain, real_t I_gain, approximation_method method) :
 		DiscreteSystemMIMO(2, input_signals_data, 1, output_signals_data), PID_regulator_params(P_gain, I_gain, 0), integrator(method, sample_time) {
 }
 
-void DiscreteIPregulator::step_function(const Vector<signal_realtime_T>& input_signals, Vector<signal_realtime_T>& output_signals) {
+void DiscreteIPregulator::step_function(const Vector<Signal>& input_signals, Vector<Signal>& output_signals) {
 
 #ifdef ASSERT_DIMENSIONS
 	if (input_signals.get_length() != 2 || output_signals.get_length() != 1)
 	throw exception_WRONG_DIMENSIONS;
 #endif
 
-	const real_t e = *input_signals.at(0).ptr;
-	const real_t y = *input_signals.at(1).ptr;
-	real_t* u_ptr = output_signals.at(0).ptr;
+	const real_t e = input_signals.at(0);
+	const real_t y = input_signals.at(1);
 	real_t u, u_P, u_I;
 
-	integrator.input_port_real_value(0) = e + get_AW_correction();
+	integrator.input(0) = e + get_AW_correction();
 	integrator.step();
-	u_I = I_gain * integrator.output_port_real_value(0);
+	u_I = I_gain * integrator.output(0);
 	u_P = P_gain * (-y);
 	u = u_P + u_I;
 	u = DiscreteAntiWindup::modify_output(u);
-	*u_ptr = u;
+	output_signals.at(0)= u;
 }
 
-void SystemControl::discrete_transfer_function_vector_h_update(VectorReal& hk_1, real_t u_k1, real_t y_k1, size_t nb, size_t na) {
-	hk_1.assert();
-	size_t n_states = nb + na;
-#ifdef ASSERT_DIMENSIONS
-	if (hk_1.get_length() != n_states)
-	throw exception_WRONG_DIMENSIONS;
-#endif
-	if (nb) {
-		for (uint i = 0; i < nb - 1; i++) {
-			hk_1[i] = hk_1[i + 1];
-		}
-		hk_1[nb - 1] = u_k1;
-	}
+void VectorDiscreteRegressor::update(real_t u, real_t y) {
+	++u_states;
+	u_states.at() = u;
+	++y_states;
+	y_states.at() = -y;
 
-	if (na) {
-		for (uint i = nb; i < nb + na - 1; i++) {
-			hk_1[i] = hk_1[i + 1];
-		}
-
-		hk_1[nb + na - 1] = -y_k1;
-	}
 }
+
+real_t& VectorDiscreteRegressor::at(uint n) {
+	uint u_length = u_states.get_length();
+	uint y_length = y_states.get_length();
+	if (n < u_length)
+		return u_states[n];
+	else if (n < y_length + u_length)
+		return y_states[n - u_length];
+	else
+		throw exception_code(exception_INDEX_OUT_OF_RANGE);
+}
+
+void VectorDiscreteRegressor2Input::update(real_t u_1, real_t u_2, real_t y) {
+	++u1_states;
+	u1_states.at() = u_1;
+	++u2_states;
+	u2_states.at() = u_2;
+	++y_states;
+	y_states.at() = -y;
+
+}
+real_t& VectorDiscreteRegressor2Input::at(uint n) {
+	uint u1_length = u1_states.get_length();
+	uint u2_length = u2_states.get_length();
+	uint y_length = y_states.get_length();
+	if (n < u1_length)
+		return u1_states[n];
+	else if (n < u1_length + u2_length)
+		return u2_states[n - u1_length];
+	else if (n < y_length + u1_length + u2_length)
+		return y_states[n - u1_length - u2_length];
+	else
+		throw exception_code(exception_INDEX_OUT_OF_RANGE);
+}
+
+real_t& VectorDiscreteParameters::at(uint n) {
+
+	uint nb = B.get_length() - 1;
+	uint na = A.get_length() - 1;
+
+	if (n < nb)
+		return B[n];
+	else if (n < nb + na)
+		return A[n - nb];
+	else
+		throw exception_code(exception_INDEX_OUT_OF_RANGE);
+
+}
+
+real_t& VectorDiscreteParameters2Input::at(uint n) {
+
+	uint nb_1 = B_1.get_length() - 1;
+	uint nb_2 = B_2.get_length() - 1;
+	uint na = A.get_length() - 1;
+
+	if (n < nb_1)
+		return B_1[n];
+	else if (n < nb_1 + nb_2)
+		return A[n - nb_1];
+	else if (n < nb_1 + nb_2 + na)
+		return A[n - nb_1 - nb_2];
+	else
+		throw exception_code(exception_INDEX_OUT_OF_RANGE);
+
+}
+

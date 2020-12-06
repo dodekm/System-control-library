@@ -14,9 +14,9 @@ ContinuousSystem::ContinuousSystem(size_t input_port_width, real_t* input_port_p
 }
 
 ContinuousSystemSISO::ContinuousSystemSISO(size_t order, real_t* dX_data_ptr, real_t* X_data_ptr) :
-		ContinuousSystem(1, &input, 1, &output, order, dX_data_ptr, X_data_ptr) {
-	input = 0;
-	output = 0;
+		ContinuousSystem(1, &input_data, 1, &output_data, order, dX_data_ptr, X_data_ptr) {
+	input_data = 0;
+	output_data = 0;
 
 }
 
@@ -36,7 +36,7 @@ ContinuousStateSpace::ContinuousStateSpace(size_t order, real_t* A_data_ptr, rea
 void ContinuousStateSpace::update_derivatives_fcn(real_t time, step_type step_type) {
 
 	(void) time;
-	real_t u = input_port_real_value(0);
+	real_t u = input(0);
 #ifdef USE_GSL
 
 	const gsl_matrix A_gsl = A.to_gsl_matrix();
@@ -62,7 +62,7 @@ void ContinuousStateSpace::update_output_fcn(real_t time, step_type step_type) {
 	output_port_real_value(0) = y;
 #else
 	real_t y = C.dot_product(X);
-	output_port_real_value(0) = y;
+	output(0) = y;
 #endif
 
 }
@@ -89,7 +89,7 @@ void ContinuousTransferFuction::update_derivatives_fcn(real_t time, step_type st
 		}
 		dX[system_order - 1] += X[i] * (-denominator_coeffs[i]);
 	}
-	dX[system_order - 1] += input_port_real_value(0);
+	dX[system_order - 1] += input(0);
 	dX[system_order - 1] /= denominator_coeffs[system_order];
 
 }
@@ -106,7 +106,7 @@ void ContinuousTransferFuction::update_output_fcn(real_t time, step_type step_ty
 		else if (i == system_order)
 			y += numerator_coeffs[i] * dX[i - 1];
 	}
-	output_port_real_value(0) = y;
+	output(0) = y;
 
 }
 
@@ -133,7 +133,7 @@ ContinuousIntegrator::ContinuousIntegrator() :
 void ContinuousIntegrator::update_derivatives_fcn(real_t time, step_type step_type) {
 	(void) time;
 	(void) step_type;
-	dX[0] = input_port_real_value(0);
+	dX[0] = input(0);
 
 }
 
@@ -141,10 +141,10 @@ void ContinuousIntegrator::update_output_fcn(real_t time, step_type step_type) {
 
 	(void) time;
 	(void) step_type;
-	output_port_real_value(0) = X[0];
+	output(0) = X[0];
 }
 
-ContinuousPID_regulator::ContinuousPID_regulator(real_t P_gain, real_t I_gain, real_t D_gain, real_t N_gain) :
+ContinuousPID_controller::ContinuousPID_controller(real_t P_gain, real_t I_gain, real_t D_gain, real_t N_gain) :
 		ContinuousSystemSISO(2, dX_data, X_data) {
 	this->P_gain = P_gain;
 	this->I_gain = I_gain;
@@ -157,26 +157,26 @@ ContinuousPID_regulator::ContinuousPID_regulator(real_t P_gain, real_t I_gain, r
 
 
 
-void ContinuousPID_regulator::update_derivatives_fcn(real_t time, step_type step_type) {
+void ContinuousPID_controller::update_derivatives_fcn(real_t time, step_type step_type) {
 	(void) time;
 	(void) step_type;
-	dX[0] = input_port_real_value(0);
-	dX[1] = N_gain *(input_port_real_value(0) - X[1]);
+	dX[0] = input(0);
+	dX[1] = N_gain *(input(0) - X[1]);
 
 }
 
 
 
-void ContinuousPID_regulator::update_output_fcn(real_t time, step_type step_type) {
+void ContinuousPID_controller::update_output_fcn(real_t time, step_type step_type) {
 
 	(void) time;
 	(void) step_type;
 	real_t y, y_P, y_I, y_D;
-	y_P = P_gain * input_port_real_value(0);
+	y_P = P_gain * input(0);
 	y_I = I_gain * X[0];
-	y_D = D_gain * N_gain * (input_port_real_value(0) - X[1]);
+	y_D = D_gain * N_gain * (input(0) - X[1]);
 	y = y_P + y_I + y_D;
-	output_port_real_value(0) = y;
+	output(0) = y;
 
 }
 
@@ -192,13 +192,13 @@ void ContinuousNonlinearSystem::update_derivatives_fcn(real_t time, step_type st
 	(void) time;
 	(void) step_type;
 
-	custom_derrivatives_fcn(dX.get_data_ptr(), X.get_data_ptr(), params.get_data_ptr(), input_port_real_value(0), time);
+	custom_derrivatives_fcn(dX.get_data_ptr(), X.get_data_ptr(), params.get_data_ptr(), input(0), time);
 
 }
 void ContinuousNonlinearSystem::update_output_fcn(real_t time, step_type step_type) {
 	(void) time;
 	(void) step_type;
-	custom_update_output_fcn(X.get_data_ptr(), params.get_data_ptr(), input_port_real_value(0), output_port_struct(0).ptr);
+	custom_update_output_fcn(X.get_data_ptr(), params.get_data_ptr(), input(0), output_port_struct(0));
 
 }
 
